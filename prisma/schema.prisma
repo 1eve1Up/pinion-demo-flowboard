@@ -1,0 +1,41 @@
+// FlowBoard — Board → List → Card (SQLite for sprint; positions for ordering)
+
+generator client {
+  provider = "prisma-client-js"
+}
+
+datasource db {
+  provider = "sqlite"
+  url      = env("DATABASE_URL")
+}
+
+model Board {
+  id        String   @id @default(cuid())
+  title     String
+  createdAt DateTime @default(now())
+  lists     List[]
+}
+
+model List {
+  id        String   @id @default(cuid())
+  boardId   String
+  board     Board    @relation(fields: [boardId], references: [id], onDelete: Cascade)
+  title     String
+  position  Int      @default(0)
+  createdAt DateTime @default(now())
+  cards     Card[]
+
+  @@index([boardId])
+}
+
+model Card {
+  id          String   @id @default(cuid())
+  listId      String
+  list        List     @relation(fields: [listId], references: [id], onDelete: Cascade)
+  title       String
+  description String   @default("")
+  position    Int      @default(0)
+  createdAt   DateTime @default(now())
+
+  @@index([listId])
+}

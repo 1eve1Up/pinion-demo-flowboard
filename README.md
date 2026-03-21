@@ -25,6 +25,25 @@ Open [http://localhost:3000](http://localhost:3000) with your browser to see the
 
 You can start editing the page by modifying `app/page.tsx`. The page auto-updates as you edit the file.
 
+## Database (SQLite / Prisma)
+
+FlowBoard uses **Prisma** with **SQLite** for local development (empty DB is fine; migrations create tables).
+
+From the **repository root**:
+
+```bash
+cp .env.example .env
+npm install
+npm run db:migrate
+npm run db:smoke
+```
+
+- **`npm run db:migrate`** — applies migrations from `prisma/migrations/` (`prisma migrate deploy`). Safe on a **fresh, empty** database.
+- **`npm run db:migrate:dev`** — create or update migrations during development (`prisma migrate dev`).
+- **`npm run db:smoke`** — inserts a board, list, and card and verifies the hierarchy (PIN-002 proof).
+
+Schema: **Board** → **List** → **Card**, each with **`position`** on list and card for ordering.
+
 This project uses [`next/font`](https://nextjs.org/docs/app/building-your-application/optimizing/fonts) to automatically optimize and load [Geist](https://vercel.com/font), a new font family for Vercel.
 
 ## Learn More

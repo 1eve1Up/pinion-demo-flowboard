@@ -1,7 +1,11 @@
 import Link from "next/link";
 import { notFound } from "next/navigation";
 
-import { prisma } from "@/lib/prisma";
+import { fetchBoardDetailFromApi } from "@/lib/fetch-board-api";
+
+import { BoardListsView } from "./BoardListsView";
+
+export const dynamic = "force-dynamic";
 
 type Params = Promise<{ boardId: string }>;
 
@@ -11,30 +15,32 @@ export default async function BoardDetailPage({
   params: Params;
 }) {
   const { boardId } = await params;
-  const board = await prisma.board.findUnique({
-    where: { id: boardId },
-  });
+  const board = await fetchBoardDetailFromApi(boardId);
 
   if (!board) {
     notFound();
   }
 
   return (
-    <div className="mx-auto max-w-3xl px-4 py-10">
-      <nav className="mb-8">
-        <Link
-          href="/boards"
-          className="text-sm text-zinc-500 underline-offset-4 hover:text-zinc-800 hover:underline dark:hover:text-zinc-200"
-        >
-          ← Boards
-        </Link>
-      </nav>
-      <header>
-        <h1 className="text-3xl font-semibold tracking-tight">{board.title}</h1>
-        <p className="mt-2 text-zinc-600 dark:text-zinc-400">
-          Lists and cards will show here in the next steps.
-        </p>
-      </header>
+    <div className="min-h-screen px-4 py-10">
+      <div className="mx-auto max-w-[120rem]">
+        <nav className="mb-6">
+          <Link
+            href="/boards"
+            className="text-sm text-zinc-500 underline-offset-4 hover:text-zinc-800 hover:underline dark:hover:text-zinc-200"
+          >
+            ← Boards
+          </Link>
+        </nav>
+        <header className="mb-2">
+          <h1 className="text-3xl font-semibold tracking-tight">{board.title}</h1>
+          <p className="mt-1 text-sm text-zinc-600 dark:text-zinc-400">
+            Lists load from the API (ordered by <code className="text-xs">position</code>
+            ). Add a column with the dashed panel.
+          </p>
+        </header>
+        <BoardListsView board={board} />
+      </div>
     </div>
   );
 }

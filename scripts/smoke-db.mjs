@@ -11,6 +11,9 @@ if (!process.env.DATABASE_URL) {
 const prisma = new PrismaClient();
 
 async function main() {
+  // Idempotent: each run used to append another "Smoke board"; clean up first.
+  await prisma.board.deleteMany({ where: { title: "Smoke board" } });
+
   const board = await prisma.board.create({ data: { title: "Smoke board" } });
   const list = await prisma.list.create({
     data: { boardId: board.id, title: "Todo", position: 0 },

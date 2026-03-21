@@ -40,9 +40,28 @@ npm run db:smoke
 
 - **`npm run db:migrate`** — applies migrations from `prisma/migrations/` (`prisma migrate deploy`). Safe on a **fresh, empty** database.
 - **`npm run db:migrate:dev`** — create or update migrations during development (`prisma migrate dev`).
-- **`npm run db:smoke`** — inserts a board, list, and card and verifies the hierarchy (PIN-002 proof).
+- **`npm run db:smoke`** — runs **`prisma migrate deploy`** on **`DATABASE_URL`** (default `file:./prisma/dev.db`), then inserts a board, list, and card and verifies the hierarchy (PIN-002 proof). Safe right after **`npm test`**, which only migrates the separate test DB.
 
 Schema: **Board** → **List** → **Card**, each with **`position`** on list and card for ordering.
+
+## REST API (JSON)
+
+Base path: **`/api`** (App Router route handlers). Errors use **`{ "error": "..." }`** with **4xx** status codes.
+
+| Method | Path | Notes |
+| --- | --- | --- |
+| `GET` | `/api/boards` | List boards (`id`, `title`, `createdAt`) |
+| `POST` | `/api/boards` | Body `{ "title" }` |
+| `GET` | `/api/boards/[boardId]` | Board with nested lists → cards (ordered by `position`) |
+| `DELETE` | `/api/boards/[boardId]` | Cascades lists and cards |
+| `POST` | `/api/lists` | Body `{ "boardId", "title", "position"? }` |
+| `PATCH` | `/api/lists/[listId]` | Body `{ "title"?, "position"? }` |
+| `DELETE` | `/api/lists/[listId]` | |
+| `POST` | `/api/cards` | Body `{ "listId", "title", "description"?, "position"? }` |
+| `PATCH` | `/api/cards/[cardId]` | Body `{ "title"?, "description"?, "listId"?, "position"? }` — **`listId`** only if the target list is on the **same board** |
+| `DELETE` | `/api/cards/[cardId]` | |
+
+Run **`npm test`** for automated API coverage (uses `prisma/test-integration.db`).
 
 This project uses [`next/font`](https://nextjs.org/docs/app/building-your-application/optimizing/fonts) to automatically optimize and load [Geist](https://vercel.com/font), a new font family for Vercel.
 

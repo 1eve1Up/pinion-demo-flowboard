@@ -1,6 +1,6 @@
 /**
- * PIN-002 smoke: insert Board → List → Card after migrations.
- * Run: npm run db:smoke (requires .env or DATABASE_URL, and db:migrate first)
+ * PIN-002 smoke: insert Board → List → Card.
+ * `npm run db:smoke` runs migrate deploy on the same DB first (default: file:./prisma/dev.db).
  */
 import { PrismaClient } from "@prisma/client";
 

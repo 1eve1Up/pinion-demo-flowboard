@@ -20,7 +20,7 @@ import {
 import { CSS } from "@dnd-kit/utilities";
 import { useRouter } from "next/navigation";
 import type { CSSProperties, FormEvent, ReactNode } from "react";
-import { useCallback, useEffect, useState } from "react";
+import { useCallback, useEffect, useRef, useState } from "react";
 
 import { readApiErrorMessage } from "@/lib/read-api-error";
 import type { BoardDetailDTO, CardDTO, ListDTO } from "@/lib/serialize";
@@ -131,13 +131,18 @@ function arrayMove<T>(arr: T[], from: number, to: number): T[] {
 
 function CardDetailPanel({
   card,
+  panelId,
+  labelledById,
   onSaved,
   onClose,
 }: {
   card: CardDTO;
+  panelId: string;
+  labelledById: string;
   onSaved: () => void;
   onClose: () => void;
 }) {
+  const descriptionRef = useRef<HTMLTextAreaElement>(null);
   const [description, setDescription] = useState(card.description);
   const [dueLocal, setDueLocal] = useState(() =>
     isoToDatetimeLocalValue(card.dueDate),
@@ -151,6 +156,21 @@ function CardDetailPanel({
     setDueLocal(isoToDatetimeLocalValue(card.dueDate));
     setArchived(card.archived);
   }, [card.id, card.description, card.dueDate, card.archived]);
+
+  useEffect(() => {
+    descriptionRef.current?.focus();
+  }, [card.id]);
+
+  useEffect(() => {
+    function onKeyDown(e: KeyboardEvent) {
+      if (e.key !== "Escape") return;
+      e.preventDefault();
+      e.stopPropagation();
+      onClose();
+    }
+    document.addEventListener("keydown", onKeyDown, true);
+    return () => document.removeEventListener("keydown", onKeyDown, true);
+  }, [onClose]);
 
   async function saveDetails() {
     setError(null);
@@ -183,8 +203,20 @@ function CardDetailPanel({
     }
   }
 
+  const archivedId = `card-${card.id}-archived`;
+
   return (
-    <div className="mt-1 space-y-2 rounded border border-zinc-200 bg-zinc-50 p-2 text-left dark:border-zinc-600 dark:bg-zinc-900/80">
+    <div
+      id={panelId}
+      role="dialog"
+      aria-modal="false"
+      aria-labelledby={labelledById}
+      className="mt-1 space-y-2 rounded border border-zinc-200 bg-zinc-50 p-2 text-left outline-none dark:border-zinc-600 dark:bg-zinc-900/80"
+      tabIndex={-1}
+    >
+      <h3 id={labelledById} className="text-xs font-semibold text-zinc-800 dark:text-zinc-100">
+        Card details
+      </h3>
       <div>
         <label
           className="text-[10px] font-medium uppercase text-zinc-500 dark:text-zinc-400"
@@ -193,12 +225,13 @@ function CardDetailPanel({
           Description
         </label>
         <textarea
+          ref={descriptionRef}
           id={`card-${card.id}-desc`}
           value={description}
           onChange={(e) => setDescription(e.target.value)}
           rows={2}
           disabled={saving}
-          className="mt-0.5 w-full resize-y rounded border border-zinc-300 bg-white px-1.5 py-1 text-xs dark:border-zinc-600 dark:bg-zinc-950"
+          className="mt-0.5 w-full resize-y rounded border border-zinc-300 bg-white px-1.5 py-1 text-xs outline-none ring-zinc-400 focus-visible:ring-2 dark:border-zinc-600 dark:bg-zinc-950"
         />
       </div>
       <div>
@@ -214,19 +247,20 @@ function CardDetailPanel({
           value={dueLocal}
           onChange={(e) => setDueLocal(e.target.value)}
           disabled={saving}
-          className="mt-0.5 w-full rounded border border-zinc-300 bg-white px-1.5 py-1 text-xs dark:border-zinc-600 dark:bg-zinc-950"
+          className="mt-0.5 w-full rounded border border-zinc-300 bg-white px-1.5 py-1 text-xs outline-none ring-zinc-400 focus-visible:ring-2 dark:border-zinc-600 dark:bg-zinc-950"
         />
       </div>
-      <label className="flex items-center gap-2 text-xs text-zinc-700 dark:text-zinc-300">
+      <div className="flex items-center gap-2 text-xs text-zinc-700 dark:text-zinc-300">
         <input
+          id={archivedId}
           type="checkbox"
           checked={archived}
           onChange={(e) => setArchived(e.target.checked)}
           disabled={saving}
           className="rounded border-zinc-400 dark:border-zinc-500"
         />
-        Archived
-      </label>
+        <label htmlFor={archivedId}>Archived</label>
+      </div>
       {error ? (
         <p className="text-xs text-red-600 dark:text-red-400" role="alert">
           {error}
@@ -237,7 +271,7 @@ function CardDetailPanel({
           type="button"
           disabled={saving}
           onClick={() => void saveDetails()}
-          className="rounded bg-zinc-800 px-2 py-1 text-xs font-medium text-white disabled:opacity-50 dark:bg-zinc-200 dark:text-zinc-900"
+          className="rounded bg-zinc-800 px-2 py-1 text-xs font-medium text-white outline-none ring-offset-2 focus-visible:ring-2 focus-visible:ring-zinc-400 disabled:opacity-50 dark:bg-zinc-200 dark:text-zinc-900 dark:focus-visible:ring-zinc-500"
         >
           {saving ? "Saving…" : "Save card"}
         </button>
@@ -245,7 +279,7 @@ function CardDetailPanel({
           type="button"
           disabled={saving}
           onClick={onClose}
-          className="rounded border border-zinc-300 px-2 py-1 text-xs dark:border-zinc-600"
+          className="rounded border border-zinc-300 px-2 py-1 text-xs outline-none ring-offset-2 focus-visible:ring-2 focus-visible:ring-zinc-400 dark:border-zinc-600 dark:focus-visible:ring-zinc-500"
         >
           Cancel
         </button>
@@ -271,6 +305,17 @@ function CardRow({
   const [title, setTitle] = useState(card.title);
   const [saving, setSaving] = useState(false);
   const [error, setError] = useState<string | null>(null);
+  const detailsTriggerRef = useRef<HTMLButtonElement>(null);
+
+  const panelId = `card-${card.id}-details-panel`;
+  const panelLabelId = `card-${card.id}-details-label`;
+
+  const closeDetails = useCallback(() => {
+    setExpanded(false);
+    requestAnimationFrame(() => {
+      detailsTriggerRef.current?.focus();
+    });
+  }, []);
 
   const {
     attributes,
@@ -421,9 +466,12 @@ function CardRow({
           ) : null}
         </button>
         <button
+          ref={detailsTriggerRef}
           type="button"
+          aria-expanded={expanded}
+          aria-controls={expanded ? panelId : undefined}
           onClick={() => setExpanded((e) => !e)}
-          className="shrink-0 rounded px-1.5 py-1 text-xs text-zinc-600 underline-offset-2 hover:bg-zinc-100 hover:underline dark:text-zinc-400 dark:hover:bg-zinc-800"
+          className="shrink-0 rounded px-1.5 py-1 text-xs text-zinc-600 underline-offset-2 hover:bg-zinc-100 hover:underline focus-visible:outline focus-visible:ring-2 focus-visible:ring-zinc-400 dark:text-zinc-400 dark:hover:bg-zinc-800 dark:focus-visible:ring-zinc-500"
         >
           {expanded ? "Close" : "Details"}
         </button>
@@ -431,8 +479,10 @@ function CardRow({
       {expanded ? (
         <CardDetailPanel
           card={card}
+          panelId={panelId}
+          labelledById={panelLabelId}
           onSaved={onSaved}
-          onClose={() => setExpanded(false)}
+          onClose={closeDetails}
         />
       ) : null}
     </li>

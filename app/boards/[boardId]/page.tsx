@@ -4,6 +4,7 @@ import { notFound } from "next/navigation";
 import { fetchBoardDetailFromApi } from "@/lib/fetch-board-api";
 
 import { BoardListsGate } from "./BoardListsGate";
+import { BoardMetaEditor } from "./BoardMetaEditor";
 
 export const dynamic = "force-dynamic";
 
@@ -34,9 +35,15 @@ export default async function BoardDetailPage({
         </nav>
         <header className="mb-2">
           <h1 className="text-3xl font-semibold tracking-tight">{board.title}</h1>
-          <p className="mt-1 text-sm text-zinc-600 dark:text-zinc-400">
-            Lists load from the API (ordered by <code className="text-xs">position</code>
-            ). Add a column with the dashed panel.
+          <BoardMetaEditor
+            boardId={board.id}
+            initialDescription={board.description}
+            initialVisibility={board.visibility}
+          />
+          <p className="mt-4 text-sm text-zinc-600 dark:text-zinc-400">
+            Lists load from the API (ordered by{" "}
+            <code className="text-xs">position</code>). Add a column with the
+            dashed panel.
           </p>
         </header>
         <BoardListsGate board={board} />

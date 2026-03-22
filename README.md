@@ -1,17 +1,29 @@
-This is a [Next.js](https://nextjs.org) project bootstrapped with [`create-next-app`](https://nextjs.org/docs/app/api-reference/cli/create-next-app).
+# FlowBoard
+
+FlowBoard is a **sprint-1 demo**: kanban-style **boards**, **lists**, and **cards** with drag-and-drop between lists, backed by **Prisma** + **SQLite** and a **Next.js** (App Router) UI and REST API.
 
 ## Repository layout
 
-- **This directory** (repository root) — FlowBoard app (`package.json`, `app/`, `public/`). Run all npm scripts here.
-- **`pinion/`** — Pinion coordination tooling only (not application code). Pinion CLI: `cd pinion && ./bin/pinion …`.
+- **Repository root** — FlowBoard app (`package.json`, `app/`, `lib/`, `prisma/`, `tests/`). Run **`npm install`**, **`npm run dev`**, **`npm test`**, and **`npm run build`** here.
+- **`pinion/`** — Pinion coordination only (task graph, work units, generated views). It is **not** part of the shipped app. Contributors updating Pinion state should run **`cd pinion && ./bin/pinion build`** to refresh the graph and views; command details and agent-oriented notes live in **[pinion/AGENTS.md](pinion/AGENTS.md)**.
 
-## Getting Started
+## Sprint-1 scope and limitations
 
-Prerequisites: **Node.js** (LTS recommended).
+This release is intentionally **single-user** and **local-first**:
 
-### Clean checkout: install, lint, test, build
+- **No authentication** — there is no login, OAuth, sessions, or per-user data isolation. Anyone who can reach the app sees the same SQLite database.
+- **No workspaces or multi-tenant accounts** — boards are not scoped to organizations or teams.
+- **No realtime collaboration** — no websockets or live presence; concurrent edits are not coordinated.
 
-From the **repository root** (no `.env` file required — see **Environment** below):
+**Deferred (not in sprint-1):** proper **auth** (e.g. OAuth or email/password), **workspaces** / shared teams, and **realtime** multi-user updates. The README does **not** claim these ship in sprint-1.
+
+## Quick start (new contributors)
+
+**Prerequisites:** Node.js (LTS recommended).
+
+### Tests and production build
+
+From the **repository root** (no `.env` required for this path):
 
 ```bash
 npm install
@@ -20,52 +32,38 @@ npm test
 npm run build
 ```
 
-`npm test` applies migrations to `prisma/test-integration.db` (via `pretest`) and runs Vitest. `npm run build` runs Prisma client generation and `next build`.
+`npm test` runs migrations against `prisma/test-integration.db` (see `pretest` in `package.json`) and executes Vitest API tests. `npm run build` runs `prisma generate` and `next build`.
+
+### Run the app locally
+
+```bash
+npm install
+# Optional: copy .env.example → .env if you want an explicit DATABASE_URL file
+npm run db:migrate
+npm run dev
+```
+
+Open [http://localhost:3000](http://localhost:3000). Use **`/boards`** for the board index and **`/boards/[id]`** for a board (create a board from the UI or via `POST /api/boards`).
 
 ### Environment
 
-- **`DATABASE_URL`** — Optional for local dev and build. If unset, the app defaults to `file:./prisma/dev.db` (see `lib/prisma.ts`). Copy [`.env.example`](.env.example) to `.env` when you want an explicit file or a non-default path. **Production** should set `DATABASE_URL` in the host environment; the app does not require undisclosed secrets for a normal build.
-
-### Development server
-
-From the **repository root**, run the development server:
-
-```bash
-npm run dev
-# or
-yarn dev
-# or
-pnpm dev
-# or
-bun dev
-```
-
-Open [http://localhost:3000](http://localhost:3000) with your browser to see the result.
-
-You can start editing the page by modifying `app/page.tsx`. The page auto-updates as you edit the file.
+- **`DATABASE_URL`** — Optional. If unset, the app defaults to `file:./prisma/dev.db` (see `lib/prisma.ts`). Use [`.env.example`](.env.example) as a template. For production, set `DATABASE_URL` in the host environment.
 
 ## Database (SQLite / Prisma)
 
-FlowBoard uses **Prisma** with **SQLite** for local development (empty DB is fine; migrations create tables).
-
-From the **repository root**:
+FlowBoard uses **SQLite** via Prisma. An empty database is fine; migrations create tables.
 
 ```bash
-cp .env.example .env
-npm install
-npm run db:migrate
-npm run db:smoke
+npm run db:migrate       # prisma migrate deploy — safe on a fresh DB
+npm run db:migrate:dev   # prisma migrate dev — when changing the schema
+npm run db:smoke         # migrate + insert sample board/list/card (PIN-002 smoke)
 ```
 
-- **`npm run db:migrate`** — applies migrations from `prisma/migrations/` (`prisma migrate deploy`). Safe on a **fresh, empty** database.
-- **`npm run db:migrate:dev`** — create or update migrations during development (`prisma migrate dev`).
-- **`npm run db:smoke`** — runs **`prisma migrate deploy`** on **`DATABASE_URL`** (default `file:./prisma/dev.db`), then inserts a board, list, and card and verifies the hierarchy (PIN-002 proof). Safe right after **`npm test`**, which only migrates the separate test DB.
-
-Schema: **Board** → **List** → **Card**, each with **`position`** on list and card for ordering.
+Schema: **Board** → **List** → **Card**, with **`position`** on lists and cards for ordering.
 
 ## REST API (JSON)
 
-Base path: **`/api`** (App Router route handlers). Errors use **`{ "error": "..." }`** with **4xx** status codes.
+Base path: **`/api`**. Errors use **`{ "error": "..." }`** with **4xx** where appropriate.
 
 | Method | Path | Notes |
 | --- | --- | --- |
@@ -77,24 +75,16 @@ Base path: **`/api`** (App Router route handlers). Errors use **`{ "error": "...
 | `PATCH` | `/api/lists/[listId]` | Body `{ "title"?, "position"? }` |
 | `DELETE` | `/api/lists/[listId]` | |
 | `POST` | `/api/cards` | Body `{ "listId", "title", "description"?, "position"? }` |
-| `PATCH` | `/api/cards/[cardId]` | Body `{ "title"?, "description"?, "listId"?, "position"? }` — **`listId`** only if the target list is on the **same board** |
+| `PATCH` | `/api/cards/[cardId]` | Body `{ "title"?, "description"?, "listId"?, "position"? }` — `listId` only if the target list is on the **same board** |
 | `DELETE` | `/api/cards/[cardId]` | |
 
-Run **`npm test`** for automated API coverage (uses `prisma/test-integration.db`).
+Run **`npm test`** for automated API coverage (sprint-path regression included).
 
-This project uses [`next/font`](https://nextjs.org/docs/app/building-your-application/optimizing/fonts) to automatically optimize and load [Geist](https://vercel.com/font), a new font family for Vercel.
+## Learn more
 
-## Learn More
+- [Next.js documentation](https://nextjs.org/docs)
+- [Prisma documentation](https://www.prisma.io/docs)
 
-To learn more about Next.js, take a look at the following resources:
+## Deploy
 
-- [Next.js Documentation](https://nextjs.org/docs) - learn about Next.js features and API.
-- [Learn Next.js](https://nextjs.org/learn) - an interactive Next.js tutorial.
-
-You can check out [the Next.js GitHub repository](https://github.com/vercel/next.js) - your feedback and contributions are welcome!
-
-## Deploy on Vercel
-
-The easiest way to deploy your Next.js app is to use the [Vercel Platform](https://vercel.com/new?utm_medium=default-template&filter=next.js&utm_source=create-next-app&utm_campaign=create-next-app-readme) from the creators of Next.js.
-
-Check out our [Next.js deployment documentation](https://nextjs.org/docs/app/building-your-application/deploying) for more details.
+Deploy like any Next.js app (e.g. [Vercel](https://vercel.com/)); set **`DATABASE_URL`** to a database your host supports (this repo defaults to SQLite for local sprint-1 work).

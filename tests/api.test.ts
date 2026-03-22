@@ -5,6 +5,7 @@ import {
   DELETE as deleteBoard,
   PATCH as patchBoard,
 } from "@/app/api/boards/[boardId]/route";
+import { POST as reorderBoardLists } from "@/app/api/boards/[boardId]/lists/reorder/route";
 import { GET as listBoards, POST as createBoard } from "@/app/api/boards/route";
 import { PATCH as patchCard } from "@/app/api/cards/[cardId]/route";
 import { POST as createCardRoot } from "@/app/api/cards/route";
@@ -350,6 +351,78 @@ describe("FlowBoard REST API", () => {
     expect(
       visibleAgain.lists.flatMap((l) => l.cards.map((c) => c.id)),
     ).toContain(card.id);
+  });
+
+  it("POST board lists reorder: dense positions, full permutation required", async () => {
+    const board = await readJson<{ id: string }>(
+      await createBoard(
+        new Request("http://localhost/api/boards", {
+          method: "POST",
+          body: JSON.stringify({ title: "Reorder" }),
+          headers: { "Content-Type": "application/json" },
+        }),
+      ),
+    );
+    const la = await readJson<{ id: string; title: string }>(
+      await createList(
+        new Request("http://localhost/api/lists", {
+          method: "POST",
+          body: JSON.stringify({ boardId: board.id, title: "A" }),
+          headers: { "Content-Type": "application/json" },
+        }),
+      ),
+    );
+    const lb = await readJson<{ id: string }>(
+      await createList(
+        new Request("http://localhost/api/lists", {
+          method: "POST",
+          body: JSON.stringify({ boardId: board.id, title: "B" }),
+          headers: { "Content-Type": "application/json" },
+        }),
+      ),
+    );
+    const lc = await readJson<{ id: string }>(
+      await createList(
+        new Request("http://localhost/api/lists", {
+          method: "POST",
+          body: JSON.stringify({ boardId: board.id, title: "C" }),
+          headers: { "Content-Type": "application/json" },
+        }),
+      ),
+    );
+
+    const reorder = await reorderBoardLists(
+      new Request("http://localhost/api/boards/x/lists/reorder", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ listIds: [lc.id, la.id, lb.id] }),
+      }),
+      { params: Promise.resolve({ boardId: board.id }) },
+    );
+    expect(reorder.status).toBe(200);
+    const body = await readJson<{ lists: { id: string; position: number }[] }>(
+      reorder,
+    );
+    expect(body.lists.map((l) => l.id)).toEqual([lc.id, la.id, lb.id]);
+    expect(body.lists.map((l) => l.position)).toEqual([0, 1, 2]);
+
+    const detail = await readJson<{ lists: { id: string; title: string }[] }>(
+      await getBoard(
+        new Request(`http://localhost/api/boards/${board.id}`),
+        { params: Promise.resolve({ boardId: board.id }) },
+      ),
+    );
+    expect(detail.lists.map((l) => l.title)).toEqual(["C", "A", "B"]);
+
+    const dup = await reorderBoardLists(
+      new Request("http://localhost/api/boards/x/lists/reorder", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ listIds: [la.id, la.id, lc.id] }),
+      }),
+      { params: Promise.resolve({ boardId: board.id }) },
+    );
+    expect(dup.status).toBe(400);
   });
 
   it("CRUD lists and cards; move card within board; rejects cross-board listId", async () => {

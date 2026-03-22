@@ -1,5 +1,4 @@
----
-name: Sprint 3 basic features
+# name: Sprint 3 basic features
 overview: "Plan Sprint 3 with theme **basic features**: close the gap between sprint-2 APIs and the UI, add workspace-aware navigation, ship in-list card reorder (PRD gap), complete the sprint-2 retro doc action, and keep auth/realtime/membership/Postgres explicitly out of scope."
 todos:
   - id: pin-019

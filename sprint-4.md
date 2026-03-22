@@ -1,11 +1,9 @@
----
-name: Sprint 4 UI improvements
+# name: Sprint 4 UI improvements
 overview: "Plan Sprint 4 with theme **UI improvements**: polish global typography and chrome, strengthen navigation context on the board page, surface card metadata and failed-operation feedback in the client-only DnD tree, improve the card details experience for accessibility, and lightly enhance the boards index—while keeping sprint-3’s deferred backend-heavy work (auth, realtime, Postgres, PRD collaboration) explicitly out of scope."
 
 # Sprint 4: UI improvements
 
 ## Grounding in sprint-3
-
 **From [sprint-3.md](sprint-3.md) — deferred (unchanged; stay out of this sprint):** OAuth/email auth, `User`, invites, roles, **enforcement**, activity log, realtime/presence, PRD-scale comments/attachments/notifications/search, PostgreSQL/S3/sync, full workspace **membership**.
 
 **From sprint-3 retrospective — process (optional parallel track, not “product UI”):** decide whether to **track `pinion/.pinion` in git**; before execution, set `**project.active_sprint**` in `[.pinion/config.yaml](pinion/.pinion/../.pinion/config.yaml)` (or repo-relative path under `pinion/`), run `**pinion plan-sprint**` / `**pinion build**` so the frontier matches intent; keep H1 as `**# Sprint 4: UI improvements**` (colon form) to avoid the `—` story-extractor pitfall documented in the retro.

@@ -3,7 +3,7 @@ import { notFound } from "next/navigation";
 
 import { fetchBoardDetailFromApi } from "@/lib/fetch-board-api";
 
-import { BoardListsView } from "./BoardListsView";
+import { BoardListsGate } from "./BoardListsGate";
 
 export const dynamic = "force-dynamic";
 
@@ -39,7 +39,7 @@ export default async function BoardDetailPage({
             ). Add a column with the dashed panel.
           </p>
         </header>
-        <BoardListsView board={board} />
+        <BoardListsGate board={board} />
       </div>
     </div>
   );

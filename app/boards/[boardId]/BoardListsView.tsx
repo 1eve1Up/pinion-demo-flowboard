@@ -968,7 +968,18 @@ export function BoardListsView({
           cards&quot; above to hide them again.
         </p>
       ) : null}
-      <div className="mt-8 flex gap-4 overflow-x-auto pb-2">
+      {lists.length === 0 ? (
+        <p className="mt-8 mb-3 max-w-2xl text-pretty text-sm text-zinc-600 dark:text-zinc-400">
+          This board has no columns yet. Create your first list in the dashed{" "}
+          <span className="font-medium text-zinc-800 dark:text-zinc-200">
+            Add list
+          </span>{" "}
+          panel, then add cards inside that column.
+        </p>
+      ) : null}
+      <div
+        className={`flex gap-4 overflow-x-auto pb-2 ${lists.length === 0 ? "" : "mt-8"}`}
+      >
         {lists.map((list) => (
           <ColumnDropShell key={list.id} listId={list.id}>
             <ColumnDragHandle listId={list.id} title={list.title} />

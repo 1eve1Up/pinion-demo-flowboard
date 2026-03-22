@@ -5,18 +5,32 @@ import { fetchBoardDetailFromApi } from "@/lib/fetch-board-api";
 
 import { BoardListsGate } from "./BoardListsGate";
 import { BoardMetaEditor } from "./BoardMetaEditor";
+import { IncludeArchivedToggle } from "./IncludeArchivedToggle";
 
 export const dynamic = "force-dynamic";
 
 type Params = Promise<{ boardId: string }>;
+type SearchParams = Promise<Record<string, string | string[] | undefined>>;
+
+function parseIncludeArchived(
+  raw: string | string[] | undefined,
+): boolean {
+  if (raw == null) return false;
+  const v = (Array.isArray(raw) ? raw[0] : raw).trim().toLowerCase();
+  return v === "true" || v === "1" || v === "yes";
+}
 
 export default async function BoardDetailPage({
   params,
+  searchParams,
 }: {
   params: Params;
+  searchParams: SearchParams;
 }) {
   const { boardId } = await params;
-  const board = await fetchBoardDetailFromApi(boardId);
+  const sp = await searchParams;
+  const includeArchived = parseIncludeArchived(sp.includeArchived);
+  const board = await fetchBoardDetailFromApi(boardId, { includeArchived });
 
   if (!board) {
     notFound();
@@ -40,13 +54,14 @@ export default async function BoardDetailPage({
             initialDescription={board.description}
             initialVisibility={board.visibility}
           />
-          <p className="mt-4 text-sm text-zinc-600 dark:text-zinc-400">
+          <IncludeArchivedToggle includeArchived={includeArchived} />
+          <p className="mt-2 text-sm text-zinc-600 dark:text-zinc-400">
             Lists load from the API (ordered by{" "}
             <code className="text-xs">position</code>). Add a column with the
             dashed panel.
           </p>
         </header>
-        <BoardListsGate board={board} />
+        <BoardListsGate board={board} includeArchived={includeArchived} />
       </div>
     </div>
   );

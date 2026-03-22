@@ -22,6 +22,12 @@ const BoardListsView = dynamic(
   },
 );
 
-export function BoardListsGate({ board }: { board: BoardDetailDTO }) {
-  return <BoardListsView board={board} />;
+export function BoardListsGate({
+  board,
+  includeArchived,
+}: {
+  board: BoardDetailDTO;
+  includeArchived: boolean;
+}) {
+  return <BoardListsView board={board} includeArchived={includeArchived} />;
 }

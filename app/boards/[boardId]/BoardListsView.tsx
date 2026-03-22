@@ -22,6 +22,22 @@ function droppableIdForList(listId: string) {
   return `droppable-list-${listId}`;
 }
 
+function isoToDatetimeLocalValue(iso: string | null): string {
+  if (!iso) return "";
+  const d = new Date(iso);
+  if (Number.isNaN(d.getTime())) return "";
+  const pad = (n: number) => String(n).padStart(2, "0");
+  return `${d.getFullYear()}-${pad(d.getMonth() + 1)}-${pad(d.getDate())}T${pad(d.getHours())}:${pad(d.getMinutes())}`;
+}
+
+function datetimeLocalValueToIso(value: string): string | null {
+  const t = value.trim();
+  if (!t) return null;
+  const d = new Date(t);
+  if (Number.isNaN(d.getTime())) return null;
+  return d.toISOString();
+}
+
 const COLUMN_DRAG_PREFIX = "column-drag-";
 const COLUMN_DROP_PREFIX = "column-drop-";
 
@@ -30,6 +46,131 @@ function arrayMove<T>(arr: T[], from: number, to: number): T[] {
   const [item] = next.splice(from, 1);
   next.splice(to, 0, item);
   return next;
+}
+
+function CardDetailPanel({
+  card,
+  onSaved,
+  onClose,
+}: {
+  card: CardDTO;
+  onSaved: () => void;
+  onClose: () => void;
+}) {
+  const [description, setDescription] = useState(card.description);
+  const [dueLocal, setDueLocal] = useState(() =>
+    isoToDatetimeLocalValue(card.dueDate),
+  );
+  const [archived, setArchived] = useState(card.archived);
+  const [saving, setSaving] = useState(false);
+  const [error, setError] = useState<string | null>(null);
+
+  useEffect(() => {
+    setDescription(card.description);
+    setDueLocal(isoToDatetimeLocalValue(card.dueDate));
+    setArchived(card.archived);
+  }, [card.id, card.description, card.dueDate, card.archived]);
+
+  async function saveDetails() {
+    setError(null);
+    setSaving(true);
+    try {
+      const dueDate =
+        dueLocal.trim() === "" ? null : datetimeLocalValueToIso(dueLocal);
+      if (dueLocal.trim() !== "" && dueDate === null) {
+        setError("Due date is invalid.");
+        return;
+      }
+      const res = await fetch(`/api/cards/${card.id}`, {
+        method: "PATCH",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({
+          description,
+          archived,
+          dueDate,
+        }),
+      });
+      const body = (await res.json().catch(() => ({}))) as { error?: string };
+      if (!res.ok) {
+        setError(body.error ?? `Save failed (${res.status})`);
+        return;
+      }
+      onSaved();
+      onClose();
+    } finally {
+      setSaving(false);
+    }
+  }
+
+  return (
+    <div className="mt-1 space-y-2 rounded border border-zinc-200 bg-zinc-50 p-2 text-left dark:border-zinc-600 dark:bg-zinc-900/80">
+      <div>
+        <label
+          className="text-[10px] font-medium uppercase text-zinc-500 dark:text-zinc-400"
+          htmlFor={`card-${card.id}-desc`}
+        >
+          Description
+        </label>
+        <textarea
+          id={`card-${card.id}-desc`}
+          value={description}
+          onChange={(e) => setDescription(e.target.value)}
+          rows={2}
+          disabled={saving}
+          className="mt-0.5 w-full resize-y rounded border border-zinc-300 bg-white px-1.5 py-1 text-xs dark:border-zinc-600 dark:bg-zinc-950"
+        />
+      </div>
+      <div>
+        <label
+          className="text-[10px] font-medium uppercase text-zinc-500 dark:text-zinc-400"
+          htmlFor={`card-${card.id}-due`}
+        >
+          Due
+        </label>
+        <input
+          id={`card-${card.id}-due`}
+          type="datetime-local"
+          value={dueLocal}
+          onChange={(e) => setDueLocal(e.target.value)}
+          disabled={saving}
+          className="mt-0.5 w-full rounded border border-zinc-300 bg-white px-1.5 py-1 text-xs dark:border-zinc-600 dark:bg-zinc-950"
+        />
+      </div>
+      <label className="flex items-center gap-2 text-xs text-zinc-700 dark:text-zinc-300">
+        <input
+          type="checkbox"
+          checked={archived}
+          onChange={(e) => setArchived(e.target.checked)}
+          disabled={saving}
+          className="rounded border-zinc-400 dark:border-zinc-500"
+        />
+        Archived
+      </label>
+      {error ? (
+        <p className="text-xs text-red-600 dark:text-red-400" role="alert">
+          {error}
+        </p>
+      ) : null}
+      <div className="flex flex-wrap gap-2">
+        <button
+          type="button"
+          disabled={saving}
+          onClick={() => void saveDetails()}
+          className="rounded bg-zinc-800 px-2 py-1 text-xs font-medium text-white disabled:opacity-50 dark:bg-zinc-200 dark:text-zinc-900"
+        >
+          {saving ? "Saving…" : "Save card"}
+        </button>
+        <button
+          type="button"
+          disabled={saving}
+          onClick={onClose}
+          className="rounded border border-zinc-300 px-2 py-1 text-xs dark:border-zinc-600"
+        >
+          Cancel
+        </button>
+      </div>
+    </div>
+  );
 }
 
 function CardRow({
@@ -42,6 +183,7 @@ function CardRow({
   onSaved: () => void;
 }) {
   const [editing, setEditing] = useState(false);
+  const [expanded, setExpanded] = useState(false);
   const [title, setTitle] = useState(card.title);
   const [saving, setSaving] = useState(false);
   const [error, setError] = useState<string | null>(null);
@@ -49,7 +191,7 @@ function CardRow({
   const { attributes, listeners, setNodeRef, transform, isDragging } =
     useDraggable({
       id: card.id,
-      disabled: editing,
+      disabled: editing || expanded,
     });
 
   const dragStyle = transform
@@ -60,7 +202,7 @@ function CardRow({
     setTitle(card.title);
   }, [card.id, card.title]);
 
-  async function save() {
+  async function saveTitle() {
     setError(null);
     const trimmed = title.trim();
     if (!trimmed) {
@@ -100,11 +242,11 @@ function CardRow({
           autoFocus
           value={title}
           onChange={(e) => setTitle(e.target.value)}
-          onBlur={() => void save()}
+          onBlur={() => void saveTitle()}
           onKeyDown={(e) => {
             if (e.key === "Enter") {
               e.preventDefault();
-              void save();
+              void saveTitle();
             }
             if (e.key === "Escape") {
               setTitle(card.title);
@@ -127,18 +269,57 @@ function CardRow({
     <li
       ref={setNodeRef}
       style={dragStyle}
-      className={isDragging ? "z-10 opacity-60" : ""}
+      className={`rounded border border-zinc-200 bg-white dark:border-zinc-600 dark:bg-zinc-950 ${
+        isDragging ? "z-10 opacity-60" : ""
+      } ${card.archived ? "opacity-80" : ""}`}
     >
-      <button
-        type="button"
-        {...listeners}
-        {...attributes}
-        onClick={() => setEditing(true)}
-        className="w-full cursor-grab touch-none rounded border border-zinc-200 bg-white px-2 py-1.5 text-left text-sm hover:border-zinc-300 active:cursor-grabbing dark:border-zinc-600 dark:bg-zinc-950 dark:hover:border-zinc-500"
-        aria-grabbed={isDragging}
-      >
-        {card.title}
-      </button>
+      <div className="flex items-stretch gap-0.5 p-0.5">
+        <button
+          type="button"
+          className="touch-none shrink-0 cursor-grab rounded px-1 py-1.5 text-zinc-400 hover:bg-zinc-100 active:cursor-grabbing dark:hover:bg-zinc-800"
+          aria-label={`Drag card ${card.title}`}
+          {...listeners}
+          {...attributes}
+          aria-grabbed={isDragging}
+        >
+          <span className="text-xs leading-none" aria-hidden>
+            ⋮⋮
+          </span>
+        </button>
+        <button
+          type="button"
+          onClick={() => setEditing(true)}
+          disabled={expanded}
+          className="min-w-0 flex-1 rounded px-1.5 py-1.5 text-left text-sm hover:bg-zinc-50 disabled:opacity-60 dark:hover:bg-zinc-900"
+        >
+          <span
+            className={
+              card.archived ? "line-through decoration-zinc-400" : undefined
+            }
+          >
+            {card.title}
+          </span>
+          {card.archived ? (
+            <span className="ml-1 text-[10px] font-medium uppercase text-zinc-400">
+              archived
+            </span>
+          ) : null}
+        </button>
+        <button
+          type="button"
+          onClick={() => setExpanded((e) => !e)}
+          className="shrink-0 rounded px-1.5 py-1 text-xs text-zinc-600 underline-offset-2 hover:bg-zinc-100 hover:underline dark:text-zinc-400 dark:hover:bg-zinc-800"
+        >
+          {expanded ? "Close" : "Details"}
+        </button>
+      </div>
+      {expanded ? (
+        <CardDetailPanel
+          card={card}
+          onSaved={onSaved}
+          onClose={() => setExpanded(false)}
+        />
+      ) : null}
     </li>
   );
 }
@@ -313,7 +494,14 @@ function ListColumnBody({ list }: { list: ListDTO }) {
   );
 }
 
-export function BoardListsView({ board }: { board: BoardDetailDTO }) {
+export function BoardListsView({
+  board,
+  includeArchived,
+}: {
+  board: BoardDetailDTO;
+  /** When true, server included archived cards in list payloads. */
+  includeArchived: boolean;
+}) {
   const router = useRouter();
   const [lists, setLists] = useState(board.lists);
   const [title, setTitle] = useState("");
@@ -479,6 +667,12 @@ export function BoardListsView({ board }: { board: BoardDetailDTO }) {
       {columnReorderError ? (
         <p className="mb-2 text-sm text-red-600 dark:text-red-400" role="alert">
           {columnReorderError}
+        </p>
+      ) : null}
+      {includeArchived ? (
+        <p className="mb-2 text-xs text-zinc-500 dark:text-zinc-400">
+          Archived cards are shown in columns. Turn off &quot;Show archived
+          cards&quot; above to hide them again.
         </p>
       ) : null}
       <div className="mt-8 flex gap-4 overflow-x-auto pb-2">

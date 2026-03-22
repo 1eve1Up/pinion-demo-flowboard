@@ -22,6 +22,7 @@ import { useRouter } from "next/navigation";
 import type { CSSProperties, FormEvent, ReactNode } from "react";
 import { useCallback, useEffect, useState } from "react";
 
+import { readApiErrorMessage } from "@/lib/read-api-error";
 import type { BoardDetailDTO, CardDTO, ListDTO } from "@/lib/serialize";
 
 function droppableIdForList(listId: string) {
@@ -633,9 +634,7 @@ export function BoardListsView({
   const [title, setTitle] = useState("");
   const [error, setError] = useState<string | null>(null);
   const [pending, setPending] = useState(false);
-  const [columnReorderError, setColumnReorderError] = useState<string | null>(
-    null,
-  );
+  const [dndError, setDndError] = useState<string | null>(null);
 
   useEffect(() => {
     setLists(board.lists);
@@ -659,7 +658,6 @@ export function BoardListsView({
 
   const onColumnDragEnd = useCallback(
     async (event: DragEndEvent) => {
-      setColumnReorderError(null);
       const { active, over } = event;
       if (!over) return;
 
@@ -680,24 +678,30 @@ export function BoardListsView({
       const previous = lists;
       setLists(reordered);
 
-      const res = await fetch(
-        `/api/boards/${board.id}/lists/reorder`,
-        {
+      let res: Response;
+      try {
+        res = await fetch(`/api/boards/${board.id}/lists/reorder`, {
           method: "POST",
           headers: { "Content-Type": "application/json" },
           body: JSON.stringify({
             listIds: reordered.map((l) => l.id),
           }),
-        },
-      );
+        });
+      } catch {
+        setLists(previous);
+        setDndError(
+          "Could not reorder columns. Check your network and try again.",
+        );
+        return;
+      }
 
       if (!res.ok) {
         setLists(previous);
-        const body = (await res.json().catch(() => ({}))) as {
-          error?: string;
-        };
-        setColumnReorderError(
-          body.error ?? `Could not reorder columns (${res.status})`,
+        setDndError(
+          await readApiErrorMessage(
+            res,
+            `Could not reorder columns (${res.status})`,
+          ),
         );
         return;
       }
@@ -748,16 +752,31 @@ export function BoardListsView({
             ),
           );
 
-          const res = await fetch(`/api/lists/${sourceListId}/cards/reorder`, {
-            method: "POST",
-            headers: { "Content-Type": "application/json" },
-            body: JSON.stringify({
-              cardIds: reordered.map((c) => c.id),
-            }),
-          });
+          let res: Response;
+          try {
+            res = await fetch(`/api/lists/${sourceListId}/cards/reorder`, {
+              method: "POST",
+              headers: { "Content-Type": "application/json" },
+              body: JSON.stringify({
+                cardIds: reordered.map((c) => c.id),
+              }),
+            });
+          } catch {
+            setLists(previous);
+            setDndError(
+              "Could not reorder cards in this column. Check your network and try again.",
+            );
+            return;
+          }
 
           if (!res.ok) {
             setLists(previous);
+            setDndError(
+              await readApiErrorMessage(
+                res,
+                `Could not reorder cards in this column (${res.status})`,
+              ),
+            );
             return;
           }
           router.refresh();
@@ -770,18 +789,35 @@ export function BoardListsView({
         );
         const newPosition = maxPos + 1;
 
-        const res = await fetch(`/api/cards/${activeId}`, {
-          method: "PATCH",
-          headers: { "Content-Type": "application/json" },
-          body: JSON.stringify({
-            listId: overList.id,
-            position: newPosition,
-          }),
-        });
-
-        if (res.ok) {
+        let res: Response;
+        try {
+          res = await fetch(`/api/cards/${activeId}`, {
+            method: "PATCH",
+            headers: { "Content-Type": "application/json" },
+            body: JSON.stringify({
+              listId: overList.id,
+              position: newPosition,
+            }),
+          });
+        } catch {
+          setDndError(
+            "Could not move the card. Check your network and try again.",
+          );
           router.refresh();
+          return;
         }
+
+        if (!res.ok) {
+          setDndError(
+            await readApiErrorMessage(
+              res,
+              `Could not move the card (${res.status})`,
+            ),
+          );
+          router.refresh();
+          return;
+        }
+        router.refresh();
         return;
       }
 
@@ -799,18 +835,35 @@ export function BoardListsView({
       );
       const newPosition = maxPos + 1;
 
-      const res = await fetch(`/api/cards/${activeId}`, {
-        method: "PATCH",
-        headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({
-          listId: targetListId,
-          position: newPosition,
-        }),
-      });
-
-      if (res.ok) {
+      let res: Response;
+      try {
+        res = await fetch(`/api/cards/${activeId}`, {
+          method: "PATCH",
+          headers: { "Content-Type": "application/json" },
+          body: JSON.stringify({
+            listId: targetListId,
+            position: newPosition,
+          }),
+        });
+      } catch {
+        setDndError(
+          "Could not move the card. Check your network and try again.",
+        );
         router.refresh();
+        return;
       }
+
+      if (!res.ok) {
+        setDndError(
+          await readApiErrorMessage(
+            res,
+            `Could not move the card (${res.status})`,
+          ),
+        );
+        router.refresh();
+        return;
+      }
+      router.refresh();
     },
     [lists, router],
   );
@@ -851,11 +904,12 @@ export function BoardListsView({
     <DndContext
       sensors={columnSensors}
       collisionDetection={closestCorners}
+      onDragStart={() => setDndError(null)}
       onDragEnd={(e) => void onColumnDragEnd(e)}
     >
-      {columnReorderError ? (
+      {dndError ? (
         <p className="mb-2 text-sm text-red-600 dark:text-red-400" role="alert">
-          {columnReorderError}
+          {dndError}
         </p>
       ) : null}
       {includeArchived ? (
@@ -871,6 +925,7 @@ export function BoardListsView({
             <DndContext
               sensors={cardSensors}
               collisionDetection={closestCorners}
+              onDragStart={() => setDndError(null)}
               onDragEnd={(e) => void onCardDragEnd(e)}
             >
               <ListColumnBody list={list} includeArchived={includeArchived} />

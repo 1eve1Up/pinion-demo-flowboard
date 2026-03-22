@@ -1,4 +1,16 @@
-import type { Board, BoardVisibility, Card, List } from "@prisma/client";
+import type { Board, BoardVisibility, Card, List, Workspace } from "@prisma/client";
+
+/** Workspace summary for GET /api/workspaces and POST responses. */
+export type WorkspaceDTO = {
+  id: string;
+  name: string;
+  createdAt: string;
+};
+
+/** Workspace with boards for GET /api/workspaces/[id] (no nested lists/cards). */
+export type WorkspaceDetailDTO = WorkspaceDTO & {
+  boards: BoardDTO[];
+};
 
 export type CardDTO = {
   id: string;
@@ -30,6 +42,23 @@ export type BoardDTO = {
 };
 
 export type BoardDetailDTO = BoardDTO & { lists: ListDTO[] };
+
+export function toWorkspaceDTO(w: Workspace): WorkspaceDTO {
+  return {
+    id: w.id,
+    name: w.name,
+    createdAt: w.createdAt.toISOString(),
+  };
+}
+
+export function toWorkspaceDetailDTO(
+  w: Workspace & { boards: Board[] },
+): WorkspaceDetailDTO {
+  return {
+    ...toWorkspaceDTO(w),
+    boards: w.boards.map(toBoardDTO),
+  };
+}
 
 export function toCardDTO(c: Card): CardDTO {
   return {

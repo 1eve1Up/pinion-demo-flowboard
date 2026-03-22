@@ -2,20 +2,20 @@ import Link from "next/link";
 
 export default function Home() {
   return (
-    <div className="flex min-h-[60vh] flex-col items-center justify-center px-4">
-      <main className="max-w-md text-center">
-        <p className="text-sm font-medium uppercase tracking-wide text-zinc-500">
+    <div className="flex min-h-[min(70vh,32rem)] flex-col items-center justify-center px-4 py-16 sm:min-h-[65vh]">
+      <main className="mx-auto w-full max-w-lg text-center">
+        <p className="text-xs font-semibold uppercase tracking-[0.2em] text-muted-foreground">
           FlowBoard
         </p>
-        <h1 className="mt-2 text-3xl font-semibold tracking-tight">
+        <h1 className="mt-4 text-3xl font-semibold tracking-tight text-balance sm:text-4xl">
           Lightweight kanban boards
         </h1>
-        <p className="mt-3 text-zinc-600 dark:text-zinc-400">
+        <p className="mx-auto mt-4 max-w-md text-pretty text-lg text-muted-foreground">
           Create boards, add lists and cards, and move work across columns.
         </p>
         <Link
           href="/boards"
-          className="mt-8 inline-flex rounded-md bg-zinc-900 px-5 py-2.5 text-sm font-medium text-white hover:bg-zinc-800 dark:bg-zinc-100 dark:text-zinc-900 dark:hover:bg-white"
+          className="mt-10 inline-flex min-h-11 min-w-[10rem] items-center justify-center rounded-lg bg-foreground px-6 py-2.5 text-sm font-medium text-background shadow-sm transition-[color,background-color,box-shadow] hover:bg-foreground/90 focus-visible:outline focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-ring"
         >
           Open boards
         </Link>

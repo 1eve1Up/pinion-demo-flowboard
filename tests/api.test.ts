@@ -6,6 +6,11 @@ import { PATCH as patchCard } from "@/app/api/cards/[cardId]/route";
 import { POST as createCardRoot } from "@/app/api/cards/route";
 import { PATCH as patchList, DELETE as deleteList } from "@/app/api/lists/[listId]/route";
 import { POST as createList } from "@/app/api/lists/route";
+import { GET as getWorkspace } from "@/app/api/workspaces/[workspaceId]/route";
+import {
+  GET as listWorkspaces,
+  POST as createWorkspace,
+} from "@/app/api/workspaces/route";
 import { prisma } from "@/lib/prisma";
 
 async function readJson<T>(res: Response): Promise<T> {
@@ -24,6 +29,57 @@ afterAll(async () => {
 });
 
 describe("FlowBoard REST API", () => {
+  it("workspaces: list, POST, GET detail, 404 for unknown id", async () => {
+    const empty = await listWorkspaces();
+    expect(empty.status).toBe(200);
+    expect((await readJson<{ workspaces: unknown[] }>(empty)).workspaces).toEqual(
+      [],
+    );
+
+    const post = await createWorkspace(
+      new Request("http://localhost/api/workspaces", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ name: "  Team A  " }),
+      }),
+    );
+    expect(post.status).toBe(201);
+    const created = await readJson<{ id: string; name: string }>(post);
+    expect(created.name).toBe("Team A");
+
+    const listed = await readJson<{ workspaces: { id: string }[] }>(
+      await listWorkspaces(),
+    );
+    expect(listed.workspaces).toHaveLength(1);
+    expect(listed.workspaces[0].id).toBe(created.id);
+
+    const detail = await getWorkspace(
+      new Request("http://localhost"),
+      { params: Promise.resolve({ workspaceId: created.id }) },
+    );
+    expect(detail.status).toBe(200);
+    const body = await readJson<{ boards: unknown[]; name: string }>(detail);
+    expect(body.name).toBe("Team A");
+    expect(body.boards).toEqual([]);
+
+    const missing = await getWorkspace(
+      new Request("http://localhost"),
+      { params: Promise.resolve({ workspaceId: "missing-ws" }) },
+    );
+    expect(missing.status).toBe(404);
+  });
+
+  it("rejects invalid JSON on POST workspace", async () => {
+    const res = await createWorkspace(
+      new Request("http://localhost/api/workspaces", {
+        method: "POST",
+        body: "{",
+        headers: { "Content-Type": "application/json" },
+      }),
+    );
+    expect(res.status).toBe(400);
+  });
+
   it("creates board, lists boards, gets board detail", async () => {
     const post = await createBoard(
       new Request("http://localhost/api/boards", {

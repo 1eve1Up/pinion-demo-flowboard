@@ -10,6 +10,7 @@ import { GET as listBoards, POST as createBoard } from "@/app/api/boards/route";
 import { PATCH as patchCard } from "@/app/api/cards/[cardId]/route";
 import { POST as createCardRoot } from "@/app/api/cards/route";
 import { PATCH as patchList, DELETE as deleteList } from "@/app/api/lists/[listId]/route";
+import { POST as reorderListCards } from "@/app/api/lists/[listId]/cards/reorder/route";
 import { POST as createList } from "@/app/api/lists/route";
 import { GET as getWorkspace } from "@/app/api/workspaces/[workspaceId]/route";
 import {
@@ -444,6 +445,100 @@ describe("FlowBoard REST API", () => {
       { params: Promise.resolve({ boardId: board.id }) },
     );
     expect(dup.status).toBe(400);
+  });
+
+  it("POST list cards reorder: dense positions, full permutation required", async () => {
+    const board = await readJson<{ id: string }>(
+      await createBoard(
+        new Request("http://localhost/api/boards", {
+          method: "POST",
+          body: JSON.stringify({ title: "Card reorder" }),
+          headers: { "Content-Type": "application/json" },
+        }),
+      ),
+    );
+    const list = await readJson<{ id: string }>(
+      await createList(
+        new Request("http://localhost/api/lists", {
+          method: "POST",
+          body: JSON.stringify({ boardId: board.id, title: "Col" }),
+          headers: { "Content-Type": "application/json" },
+        }),
+      ),
+    );
+    const c1 = await readJson<{ id: string }>(
+      await createCardRoot(
+        new Request("http://localhost/api/cards", {
+          method: "POST",
+          body: JSON.stringify({ listId: list.id, title: "One" }),
+          headers: { "Content-Type": "application/json" },
+        }),
+      ),
+    );
+    const c2 = await readJson<{ id: string }>(
+      await createCardRoot(
+        new Request("http://localhost/api/cards", {
+          method: "POST",
+          body: JSON.stringify({ listId: list.id, title: "Two" }),
+          headers: { "Content-Type": "application/json" },
+        }),
+      ),
+    );
+    const c3 = await readJson<{ id: string }>(
+      await createCardRoot(
+        new Request("http://localhost/api/cards", {
+          method: "POST",
+          body: JSON.stringify({ listId: list.id, title: "Three" }),
+          headers: { "Content-Type": "application/json" },
+        }),
+      ),
+    );
+
+    const reorder = await reorderListCards(
+      new Request("http://localhost/api/lists/x/cards/reorder", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ cardIds: [c3.id, c1.id, c2.id] }),
+      }),
+      { params: Promise.resolve({ listId: list.id }) },
+    );
+    expect(reorder.status).toBe(200);
+    const body = await readJson<{ cards: { id: string; position: number }[] }>(
+      reorder,
+    );
+    expect(body.cards.map((c) => c.id)).toEqual([c3.id, c1.id, c2.id]);
+    expect(body.cards.map((c) => c.position)).toEqual([0, 1, 2]);
+
+    const detail = await readJson<{
+      lists: { id: string; cards: { id: string; title: string }[] }[];
+    }>(
+      await getBoard(
+        new Request(`http://localhost/api/boards/${board.id}`),
+        { params: Promise.resolve({ boardId: board.id }) },
+      ),
+    );
+    const col = detail.lists.find((l) => l.id === list.id);
+    expect(col?.cards.map((c) => c.title)).toEqual(["Three", "One", "Two"]);
+
+    const bad = await reorderListCards(
+      new Request("http://localhost/api/lists/x/cards/reorder", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ cardIds: [c3.id, c3.id, c2.id] }),
+      }),
+      { params: Promise.resolve({ listId: list.id }) },
+    );
+    expect(bad.status).toBe(400);
+
+    const missingList = await reorderListCards(
+      new Request("http://localhost/api/lists/x/cards/reorder", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ cardIds: [c1.id, c2.id, c3.id] }),
+      }),
+      { params: Promise.resolve({ listId: "no-such-list" }) },
+    );
+    expect(missingList.status).toBe(404);
   });
 
   it("CRUD lists and cards; move card within board; rejects cross-board listId", async () => {

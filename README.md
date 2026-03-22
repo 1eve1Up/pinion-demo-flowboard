@@ -9,6 +9,25 @@ This is a [Next.js](https://nextjs.org) project bootstrapped with [`create-next-
 
 Prerequisites: **Node.js** (LTS recommended).
 
+### Clean checkout: install, lint, test, build
+
+From the **repository root** (no `.env` file required — see **Environment** below):
+
+```bash
+npm install
+npm run lint
+npm test
+npm run build
+```
+
+`npm test` applies migrations to `prisma/test-integration.db` (via `pretest`) and runs Vitest. `npm run build` runs Prisma client generation and `next build`.
+
+### Environment
+
+- **`DATABASE_URL`** — Optional for local dev and build. If unset, the app defaults to `file:./prisma/dev.db` (see `lib/prisma.ts`). Copy [`.env.example`](.env.example) to `.env` when you want an explicit file or a non-default path. **Production** should set `DATABASE_URL` in the host environment; the app does not require undisclosed secrets for a normal build.
+
+### Development server
+
 From the **repository root**, run the development server:
 
 ```bash

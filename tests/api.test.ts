@@ -216,6 +216,142 @@ describe("FlowBoard REST API", () => {
     expect(body.error).toBeTruthy();
   });
 
+  it("PATCH card archived and dueDate; board GET omits archived unless includeArchived", async () => {
+    const board = await readJson<{ id: string }>(
+      await createBoard(
+        new Request("http://localhost/api/boards", {
+          method: "POST",
+          body: JSON.stringify({ title: "Archive demo" }),
+          headers: { "Content-Type": "application/json" },
+        }),
+      ),
+    );
+    const list = await readJson<{ id: string }>(
+      await createList(
+        new Request("http://localhost/api/lists", {
+          method: "POST",
+          body: JSON.stringify({ boardId: board.id, title: "Col" }),
+          headers: { "Content-Type": "application/json" },
+        }),
+      ),
+    );
+    const card = await readJson<{ id: string }>(
+      await createCardRoot(
+        new Request("http://localhost/api/cards", {
+          method: "POST",
+          body: JSON.stringify({ listId: list.id, title: "Task" }),
+          headers: { "Content-Type": "application/json" },
+        }),
+      ),
+    );
+
+    const withDue = await patchCard(
+      new Request("http://localhost/api/cards/x", {
+        method: "PATCH",
+        body: JSON.stringify({ dueDate: "2026-06-15T12:00:00.000Z" }),
+        headers: { "Content-Type": "application/json" },
+      }),
+      { params: Promise.resolve({ cardId: card.id }) },
+    );
+    expect(withDue.status).toBe(200);
+    expect((await readJson<{ dueDate: string | null }>(withDue)).dueDate).toBe(
+      "2026-06-15T12:00:00.000Z",
+    );
+
+    const clearedDue = await patchCard(
+      new Request("http://localhost/api/cards/x", {
+        method: "PATCH",
+        body: JSON.stringify({ dueDate: null }),
+        headers: { "Content-Type": "application/json" },
+      }),
+      { params: Promise.resolve({ cardId: card.id }) },
+    );
+    expect(clearedDue.status).toBe(200);
+    expect((await readJson<{ dueDate: string | null }>(clearedDue)).dueDate).toBe(
+      null,
+    );
+
+    const badDue = await patchCard(
+      new Request("http://localhost/api/cards/x", {
+        method: "PATCH",
+        body: JSON.stringify({ dueDate: "not-a-date" }),
+        headers: { "Content-Type": "application/json" },
+      }),
+      { params: Promise.resolve({ cardId: card.id }) },
+    );
+    expect(badDue.status).toBe(400);
+
+    const badArchived = await patchCard(
+      new Request("http://localhost/api/cards/x", {
+        method: "PATCH",
+        body: JSON.stringify({ archived: "true" }),
+        headers: { "Content-Type": "application/json" },
+      }),
+      { params: Promise.resolve({ cardId: card.id }) },
+    );
+    expect(badArchived.status).toBe(400);
+
+    const archivedRes = await patchCard(
+      new Request("http://localhost/api/cards/x", {
+        method: "PATCH",
+        body: JSON.stringify({ archived: true }),
+        headers: { "Content-Type": "application/json" },
+      }),
+      { params: Promise.resolve({ cardId: card.id }) },
+    );
+    expect(archivedRes.status).toBe(200);
+    expect((await readJson<{ archived: boolean }>(archivedRes)).archived).toBe(
+      true,
+    );
+
+    const defaultDetail = await readJson<{
+      lists: { cards: { id: string }[] }[];
+    }>(
+      await getBoard(
+        new Request(`http://localhost/api/boards/${board.id}`),
+        { params: Promise.resolve({ boardId: board.id }) },
+      ),
+    );
+    const defaultIds = defaultDetail.lists.flatMap((l) =>
+      l.cards.map((c) => c.id),
+    );
+    expect(defaultIds).not.toContain(card.id);
+
+    const withArchived = await readJson<{
+      lists: { cards: { id: string }[] }[];
+    }>(
+      await getBoard(
+        new Request(
+          `http://localhost/api/boards/${board.id}?includeArchived=true`,
+        ),
+        { params: Promise.resolve({ boardId: board.id }) },
+      ),
+    );
+    const allIds = withArchived.lists.flatMap((l) => l.cards.map((c) => c.id));
+    expect(allIds).toContain(card.id);
+
+    const unarchived = await patchCard(
+      new Request("http://localhost/api/cards/x", {
+        method: "PATCH",
+        body: JSON.stringify({ archived: false }),
+        headers: { "Content-Type": "application/json" },
+      }),
+      { params: Promise.resolve({ cardId: card.id }) },
+    );
+    expect(unarchived.status).toBe(200);
+    const visibleAgain = await readJson<{
+      lists: { cards: { id: string }[] }[];
+    }>(
+      await getBoard(
+        new Request(`http://localhost/api/boards/${board.id}`),
+        { params: Promise.resolve({ boardId: board.id }) },
+      ),
+    );
+    expect(
+      visibleAgain.lists.flatMap((l) => l.cards.map((c) => c.id)),
+    ).toContain(card.id);
+  });
+
   it("CRUD lists and cards; move card within board; rejects cross-board listId", async () => {
     const b1 = await readJson<{ id: string }>(
       await createBoard(

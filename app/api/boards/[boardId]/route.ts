@@ -16,17 +16,31 @@ function parseVisibility(value: unknown): BoardVisibility | "invalid" | undefine
   return "invalid";
 }
 
+/** Query `includeArchived=true|1|yes` includes archived cards in each list; default omits them (still visible via PATCH card and optional flag). */
+function includeArchivedFromRequest(request: Request): boolean {
+  const raw = new URL(request.url).searchParams.get("includeArchived");
+  if (raw == null) return false;
+  const v = raw.toLowerCase();
+  return v === "true" || v === "1" || v === "yes";
+}
+
 export async function GET(
-  _request: Request,
+  request: Request,
   context: { params: Promise<{ boardId: string }> },
 ) {
   const { boardId } = await context.params;
+  const includeArchived = includeArchivedFromRequest(request);
   const board = await prisma.board.findUnique({
     where: { id: boardId },
     include: {
       lists: {
         orderBy: { position: "asc" },
-        include: { cards: { orderBy: { position: "asc" } } },
+        include: {
+          cards: {
+            where: includeArchived ? undefined : { archived: false },
+            orderBy: { position: "asc" },
+          },
+        },
       },
     },
   });

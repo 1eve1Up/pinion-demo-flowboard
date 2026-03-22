@@ -16,6 +16,8 @@ export async function PATCH(
     description?: unknown;
     listId?: unknown;
     position?: unknown;
+    archived?: unknown;
+    dueDate?: unknown;
   }>(request);
   if (body === null) {
     return jsonError("Invalid JSON body", 400);
@@ -34,6 +36,8 @@ export async function PATCH(
     description?: string;
     listId?: string;
     position?: number;
+    archived?: boolean;
+    dueDate?: Date | null;
   } = {};
 
   if (body.title !== undefined) {
@@ -74,6 +78,30 @@ export async function PATCH(
         );
       }
       data.listId = newListId;
+    }
+  }
+
+  if (body.archived !== undefined) {
+    if (typeof body.archived !== "boolean") {
+      return jsonError("archived must be a boolean", 400);
+    }
+    data.archived = body.archived;
+  }
+  if (body.dueDate !== undefined) {
+    if (body.dueDate === null) {
+      data.dueDate = null;
+    } else if (typeof body.dueDate === "string") {
+      const trimmed = body.dueDate.trim();
+      if (!trimmed) {
+        return jsonError("dueDate must be a non-empty ISO-8601 string or null", 400);
+      }
+      const parsed = new Date(trimmed);
+      if (Number.isNaN(parsed.getTime())) {
+        return jsonError("dueDate must be a valid ISO-8601 datetime", 400);
+      }
+      data.dueDate = parsed;
+    } else {
+      return jsonError("dueDate must be an ISO-8601 string or null", 400);
     }
   }
 

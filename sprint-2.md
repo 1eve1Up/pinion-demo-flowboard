@@ -93,3 +93,7 @@ _Focus: Why did the board page show a React hydration error after column reorder
 ### Notes
 
 **Delivered vs PRD:** Core hierarchy **Workspace → Board → List → Card** is reflected in persistence and APIs; **visibility** is stored but **not enforced** for multi-user access (matches “structural only” intent). **App-only follow-up:** commit **`fix(board): avoid DnD hydration mismatch`** on repo `main` adds **`BoardListsGate.tsx`** and updates **`page.tsx`**—not tied to a PIN id. **`pinion stats`** will continue to show **zero lines** for merges until Pinion’s git root aligns with the app tree or stats are collected another way.
+
+### Sprint 2 End Board
+
+![Sprint 2 End Board](readme-images/sprint-2-end-board.png)

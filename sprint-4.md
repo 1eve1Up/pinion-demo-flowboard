@@ -106,3 +106,7 @@ _Separate issue: hydration — **Why** did the board page mismatch? **Client `Bo
 
 - **Good patterns to carry forward:** **`readApiErrorMessage`**, **`cardDueMeta`** in **`lib/`** with tests, **`BoardListsGate`** static skeleton only, **AGENTS.md** “Board UI conventions (sprint-4)” as the handoff for future DnD/UI work.
 - **Next sprint candidates** (not committed here): labels or filters (still API-bound), board-level loading.tsx, or the deferred **auth/realtime** track once scope is explicitly opened.
+
+### Sprint 4 End Board
+
+![Sprint 4 End Board](readme-images/sprint-4-end-board.png)

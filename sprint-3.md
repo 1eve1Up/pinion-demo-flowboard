@@ -120,3 +120,7 @@ _Focus: a planning/tooling snag during sprint planning — extra placeholder wor
 **Follow-ups for later sprints:** authentication and real multi-user isolation; workspace **membership** and **enforced** visibility; realtime / presence; PostgreSQL (or other hosted DB) as the default for non-demo deploys; PRD-scale comments, attachments, search, and notifications.
 
 **Technical note:** Intra-list reorder depends on **`@dnd-kit/sortable`**; keep sortable trees inside the same **client-only** boundary as **`BoardListsGate`** (see [AGENTS.md](../../../AGENTS.md)).
+
+### Sprint 3 End Board
+
+![Sprint 3 End Board](readme-images/sprint-3-end-board.png)

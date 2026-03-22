@@ -105,3 +105,7 @@ Run **`npm test`** for automated API coverage (workspaces, scoped boards, board 
 ## Deploy
 
 Deploy like any Next.js app (e.g. [Vercel](https://vercel.com/)); set **`DATABASE_URL`** to a database your host supports (this repo defaults to SQLite for local demo work).
+
+## Pinion-Built
+
+This repo is built by Level Up's Pinion

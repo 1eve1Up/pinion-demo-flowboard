@@ -77,3 +77,7 @@ We **shipped the sprint goal**: FlowBoard at the **repository root** with Prisma
 ### Notes
 
 **Delivered vs PRD:** Full **single-user** slice matches sprint boundaries; **auth, workspaces, realtime**, and **multi-user** collaboration remain **deferred**, as documented in the root README. **Next:** optional sprint-2 for deferred items or production hardening; re-run **`pinion build`** after changing **`active_sprint`**.
+
+### Sprint 1 End Board
+
+![Sprint 1 End Board](readme-images/sprint-1-end-board.png)

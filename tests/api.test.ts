@@ -207,3 +207,136 @@ describe("FlowBoard REST API", () => {
     expect(p.status).toBe(404);
   });
 });
+
+/**
+ * PIN-008 — isolated DB via `DATABASE_URL=file:./prisma/test-integration.db` (see npm `pretest` / `test`).
+ * Fails if move stops persisting or cross-board moves corrupt data.
+ */
+describe("Sprint path regression (PIN-008)", () => {
+  it("full API path: board → lists → card → move; GET and Prisma match", async () => {
+    const board = await readJson<{ id: string }>(
+      await createBoard(
+        new Request("http://localhost/api/boards", {
+          method: "POST",
+          body: JSON.stringify({ title: "Regression board" }),
+          headers: { "Content-Type": "application/json" },
+        }),
+      ),
+    );
+    const colA = await readJson<{ id: string }>(
+      await createList(
+        new Request("http://localhost/api/lists", {
+          method: "POST",
+          body: JSON.stringify({ boardId: board.id, title: "A" }),
+          headers: { "Content-Type": "application/json" },
+        }),
+      ),
+    );
+    const colB = await readJson<{ id: string }>(
+      await createList(
+        new Request("http://localhost/api/lists", {
+          method: "POST",
+          body: JSON.stringify({ boardId: board.id, title: "B" }),
+          headers: { "Content-Type": "application/json" },
+        }),
+      ),
+    );
+    const card = await readJson<{ id: string }>(
+      await createCardRoot(
+        new Request("http://localhost/api/cards", {
+          method: "POST",
+          body: JSON.stringify({ listId: colA.id, title: "Item" }),
+          headers: { "Content-Type": "application/json" },
+        }),
+      ),
+    );
+
+    const move = await patchCard(
+      new Request("http://localhost/api/cards/x", {
+        method: "PATCH",
+        body: JSON.stringify({ listId: colB.id, position: 0 }),
+        headers: { "Content-Type": "application/json" },
+      }),
+      { params: Promise.resolve({ cardId: card.id }) },
+    );
+    expect(move.status).toBe(200);
+
+    const row = await prisma.card.findUnique({ where: { id: card.id } });
+    expect(row?.listId).toBe(colB.id);
+    expect(row?.position).toBe(0);
+
+    const detail = await readJson<{
+      lists: { id: string; cards: { id: string }[] }[];
+    }>(
+      await getBoard(
+        new Request("http://localhost"),
+        { params: Promise.resolve({ boardId: board.id }) },
+      ),
+    );
+    const listA = detail.lists.find((l) => l.id === colA.id);
+    const listB = detail.lists.find((l) => l.id === colB.id);
+    expect(listA?.cards.some((c) => c.id === card.id)).toBe(false);
+    expect(listB?.cards.some((c) => c.id === card.id)).toBe(true);
+  });
+
+  it("rejected cross-board move does not change stored listId", async () => {
+    const home = await readJson<{ id: string }>(
+      await createBoard(
+        new Request("http://localhost/api/boards", {
+          method: "POST",
+          body: JSON.stringify({ title: "Home" }),
+          headers: { "Content-Type": "application/json" },
+        }),
+      ),
+    );
+    const away = await readJson<{ id: string }>(
+      await createBoard(
+        new Request("http://localhost/api/boards", {
+          method: "POST",
+          body: JSON.stringify({ title: "Away" }),
+          headers: { "Content-Type": "application/json" },
+        }),
+      ),
+    );
+    const homeList = await readJson<{ id: string }>(
+      await createList(
+        new Request("http://localhost/api/lists", {
+          method: "POST",
+          body: JSON.stringify({ boardId: home.id, title: "In" }),
+          headers: { "Content-Type": "application/json" },
+        }),
+      ),
+    );
+    const awayList = await readJson<{ id: string }>(
+      await createList(
+        new Request("http://localhost/api/lists", {
+          method: "POST",
+          body: JSON.stringify({ boardId: away.id, title: "Out" }),
+          headers: { "Content-Type": "application/json" },
+        }),
+      ),
+    );
+    const card = await readJson<{ id: string }>(
+      await createCardRoot(
+        new Request("http://localhost/api/cards", {
+          method: "POST",
+          body: JSON.stringify({ listId: homeList.id, title: "X" }),
+          headers: { "Content-Type": "application/json" },
+        }),
+      ),
+    );
+
+    const res = await patchCard(
+      new Request("http://localhost/api/cards/x", {
+        method: "PATCH",
+        body: JSON.stringify({ listId: awayList.id, position: 0 }),
+        headers: { "Content-Type": "application/json" },
+      }),
+      { params: Promise.resolve({ cardId: card.id }) },
+    );
+    expect(res.status).toBe(400);
+
+    const row = await prisma.card.findUnique({ where: { id: card.id } });
+    expect(row?.listId).toBe(homeList.id);
+  });
+});

@@ -122,7 +122,10 @@ export default async function BoardDetailPage({
             initialDescription={board.description}
             initialVisibility={board.visibility}
           />
-          <IncludeArchivedToggle includeArchived={includeArchived} />
+          <IncludeArchivedToggle
+            boardId={board.id}
+            includeArchived={includeArchived}
+          />
           <p className="mt-4 text-sm text-pretty text-muted-foreground">
             Lists load from the API (ordered by{" "}
             <code className="rounded bg-muted/80 px-1 py-0.5 font-mono text-xs text-foreground">

@@ -445,6 +445,9 @@ describe("FlowBoard REST API", () => {
       { params: Promise.resolve({ boardId: board.id }) },
     );
     expect(dup.status).toBe(400);
+    expect((await readJson<{ error: string }>(dup)).error).toBe(
+      "listIds must not contain duplicates",
+    );
   });
 
   it("POST list cards reorder: dense positions, full permutation required", async () => {
@@ -529,6 +532,9 @@ describe("FlowBoard REST API", () => {
       { params: Promise.resolve({ listId: list.id }) },
     );
     expect(bad.status).toBe(400);
+    expect((await readJson<{ error: string }>(bad)).error).toBe(
+      "cardIds must not contain duplicates",
+    );
 
     const missingList = await reorderListCards(
       new Request("http://localhost/api/lists/x/cards/reorder", {

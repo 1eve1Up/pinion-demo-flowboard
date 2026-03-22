@@ -1,10 +1,26 @@
 "use client";
 
+import {
+  DndContext,
+  type DragEndEvent,
+  KeyboardSensor,
+  PointerSensor,
+  closestCorners,
+  useDraggable,
+  useDroppable,
+  useSensor,
+  useSensors,
+} from "@dnd-kit/core";
+import { CSS } from "@dnd-kit/utilities";
 import { useRouter } from "next/navigation";
 import type { FormEvent } from "react";
-import { useEffect, useState } from "react";
+import { useCallback, useEffect, useState } from "react";
 
 import type { BoardDetailDTO, CardDTO, ListDTO } from "@/lib/serialize";
+
+function droppableIdForList(listId: string) {
+  return `droppable-list-${listId}`;
+}
 
 function CardRow({
   card,
@@ -19,6 +35,16 @@ function CardRow({
   const [title, setTitle] = useState(card.title);
   const [saving, setSaving] = useState(false);
   const [error, setError] = useState<string | null>(null);
+
+  const { attributes, listeners, setNodeRef, transform, isDragging } =
+    useDraggable({
+      id: card.id,
+      disabled: editing,
+    });
+
+  const dragStyle = transform
+    ? { transform: CSS.Translate.toString(transform) }
+    : undefined;
 
   useEffect(() => {
     setTitle(card.title);
@@ -88,11 +114,18 @@ function CardRow({
   }
 
   return (
-    <li>
+    <li
+      ref={setNodeRef}
+      style={dragStyle}
+      className={isDragging ? "z-10 opacity-60" : ""}
+    >
       <button
         type="button"
+        {...listeners}
+        {...attributes}
         onClick={() => setEditing(true)}
-        className="w-full rounded border border-zinc-200 bg-white px-2 py-1.5 text-left text-sm hover:border-zinc-300 dark:border-zinc-600 dark:bg-zinc-950 dark:hover:border-zinc-500"
+        className="w-full cursor-grab touch-none rounded border border-zinc-200 bg-white px-2 py-1.5 text-left text-sm hover:border-zinc-300 active:cursor-grabbing dark:border-zinc-600 dark:bg-zinc-950 dark:hover:border-zinc-500"
+        aria-grabbed={isDragging}
       >
         {card.title}
       </button>
@@ -105,6 +138,10 @@ function ListColumn({ list }: { list: ListDTO }) {
   const [cardTitle, setCardTitle] = useState("");
   const [addPending, setAddPending] = useState(false);
   const [addError, setAddError] = useState<string | null>(null);
+
+  const { setNodeRef, isOver } = useDroppable({
+    id: droppableIdForList(list.id),
+  });
 
   async function addCard(e: FormEvent) {
     e.preventDefault();
@@ -150,20 +187,31 @@ function ListColumn({ list }: { list: ListDTO }) {
         </h2>
       </div>
       <div className="flex min-h-[120px] flex-1 flex-col px-2 py-2">
-        {list.cards.length === 0 ? (
-          <p className="px-1 text-xs text-zinc-500">No cards yet</p>
-        ) : (
-          <ul className="mb-2 space-y-1">
-            {list.cards.map((c) => (
-              <CardRow
-                key={c.id}
-                card={c}
-                listId={list.id}
-                onSaved={() => router.refresh()}
-              />
-            ))}
-          </ul>
-        )}
+        <div
+          ref={setNodeRef}
+          className={`mb-2 min-h-[4.5rem] flex-1 rounded-md px-0.5 py-0.5 transition-colors ${
+            isOver
+              ? "bg-zinc-200/80 ring-2 ring-zinc-400 dark:bg-zinc-800/80 dark:ring-zinc-500"
+              : ""
+          }`}
+        >
+          {list.cards.length === 0 ? (
+            <p className="px-1 py-2 text-xs text-zinc-500">
+              Drop cards here or add below
+            </p>
+          ) : (
+            <ul className="space-y-1">
+              {list.cards.map((c) => (
+                <CardRow
+                  key={c.id}
+                  card={c}
+                  listId={list.id}
+                  onSaved={() => router.refresh()}
+                />
+              ))}
+            </ul>
+          )}
+        </div>
         <form
           className="mt-auto flex flex-col gap-1 border-t border-zinc-200 pt-2 dark:border-zinc-700"
           onSubmit={addCard}
@@ -201,6 +249,60 @@ export function BoardListsView({ board }: { board: BoardDetailDTO }) {
   const [error, setError] = useState<string | null>(null);
   const [pending, setPending] = useState(false);
 
+  const sensors = useSensors(
+    useSensor(PointerSensor, {
+      activationConstraint: { distance: 8 },
+    }),
+    useSensor(KeyboardSensor),
+  );
+
+  const onDragEnd = useCallback(
+    async (event: DragEndEvent) => {
+      const { active, over } = event;
+      if (!over) return;
+
+      const cardId = String(active.id);
+      const overId = String(over.id);
+      const prefix = "droppable-list-";
+      if (!overId.startsWith(prefix)) return;
+
+      const targetListId = overId.slice(prefix.length);
+
+      let sourceListId: string | null = null;
+      for (const l of board.lists) {
+        if (l.cards.some((c) => c.id === cardId)) {
+          sourceListId = l.id;
+          break;
+        }
+      }
+      if (!sourceListId) return;
+      if (sourceListId === targetListId) return;
+
+      const targetList = board.lists.find((l) => l.id === targetListId);
+      if (!targetList) return;
+
+      const maxPos = targetList.cards.reduce(
+        (m, c) => Math.max(m, c.position),
+        -1,
+      );
+      const newPosition = maxPos + 1;
+
+      const res = await fetch(`/api/cards/${cardId}`, {
+        method: "PATCH",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({
+          listId: targetListId,
+          position: newPosition,
+        }),
+      });
+
+      if (res.ok) {
+        router.refresh();
+      }
+    },
+    [board.lists, router],
+  );
+
   async function onSubmitList(e: FormEvent) {
     e.preventDefault();
     setError(null);
@@ -234,39 +336,45 @@ export function BoardListsView({ board }: { board: BoardDetailDTO }) {
   }
 
   return (
-    <div className="mt-8 flex gap-4 overflow-x-auto pb-2">
-      {board.lists.map((list) => (
-        <ListColumn key={list.id} list={list} />
-      ))}
+    <DndContext
+      sensors={sensors}
+      collisionDetection={closestCorners}
+      onDragEnd={(e) => void onDragEnd(e)}
+    >
+      <div className="mt-8 flex gap-4 overflow-x-auto pb-2">
+        {board.lists.map((list) => (
+          <ListColumn key={list.id} list={list} />
+        ))}
 
-      <div className="w-72 shrink-0 rounded-lg border border-dashed border-zinc-300 bg-white p-3 dark:border-zinc-600 dark:bg-zinc-950">
-        <h2 className="text-sm font-medium text-zinc-700 dark:text-zinc-300">
-          Add list
-        </h2>
-        <form className="mt-3 flex flex-col gap-2" onSubmit={onSubmitList}>
-          {error ? (
-            <p className="text-xs text-red-600 dark:text-red-400" role="alert">
-              {error}
-            </p>
-          ) : null}
-          <input
-            type="text"
-            value={title}
-            onChange={(e) => setTitle(e.target.value)}
-            placeholder="Column name"
-            autoComplete="off"
-            disabled={pending}
-            className="rounded-md border border-zinc-300 bg-white px-2 py-1.5 text-sm dark:border-zinc-600 dark:bg-zinc-900"
-          />
-          <button
-            type="submit"
-            disabled={pending}
-            className="rounded-md bg-zinc-900 py-1.5 text-sm font-medium text-white disabled:opacity-50 dark:bg-zinc-100 dark:text-zinc-900"
-          >
-            {pending ? "Adding…" : "Add list"}
-          </button>
-        </form>
+        <div className="w-72 shrink-0 rounded-lg border border-dashed border-zinc-300 bg-white p-3 dark:border-zinc-600 dark:bg-zinc-950">
+          <h2 className="text-sm font-medium text-zinc-700 dark:text-zinc-300">
+            Add list
+          </h2>
+          <form className="mt-3 flex flex-col gap-2" onSubmit={onSubmitList}>
+            {error ? (
+              <p className="text-xs text-red-600 dark:text-red-400" role="alert">
+                {error}
+              </p>
+            ) : null}
+            <input
+              type="text"
+              value={title}
+              onChange={(e) => setTitle(e.target.value)}
+              placeholder="Column name"
+              autoComplete="off"
+              disabled={pending}
+              className="rounded-md border border-zinc-300 bg-white px-2 py-1.5 text-sm dark:border-zinc-600 dark:bg-zinc-900"
+            />
+            <button
+              type="submit"
+              disabled={pending}
+              className="rounded-md bg-zinc-900 py-1.5 text-sm font-medium text-white disabled:opacity-50 dark:bg-zinc-100 dark:text-zinc-900"
+            >
+              {pending ? "Adding…" : "Add list"}
+            </button>
+          </form>
+        </div>
       </div>
-    </div>
+    </DndContext>
   );
 }

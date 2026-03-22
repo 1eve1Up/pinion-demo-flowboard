@@ -1,6 +1,10 @@
 import { afterAll, beforeEach, describe, expect, it } from "vitest";
 
-import { GET as getBoard, DELETE as deleteBoard } from "@/app/api/boards/[boardId]/route";
+import {
+  GET as getBoard,
+  DELETE as deleteBoard,
+  PATCH as patchBoard,
+} from "@/app/api/boards/[boardId]/route";
 import { GET as listBoards, POST as createBoard } from "@/app/api/boards/route";
 import { PATCH as patchCard } from "@/app/api/cards/[cardId]/route";
 import { POST as createCardRoot } from "@/app/api/cards/route";
@@ -92,7 +96,9 @@ describe("FlowBoard REST API", () => {
     const created = await readJson<{ id: string; title: string }>(post);
     expect(created.title).toBe("Sprint");
 
-    const listRes = await listBoards();
+    const listRes = await listBoards(
+      new Request("http://localhost/api/boards"),
+    );
     expect(listRes.status).toBe(200);
     const listBody = await readJson<{ boards: { id: string }[] }>(listRes);
     expect(listBody.boards).toHaveLength(1);
@@ -104,6 +110,97 @@ describe("FlowBoard REST API", () => {
     expect(getRes.status).toBe(200);
     const detail = await readJson<{ lists: unknown[] }>(getRes);
     expect(detail.lists).toEqual([]);
+  });
+
+  it("GET /api/boards?workspaceId= filters boards; POST respects workspaceId; PATCH updates fields", async () => {
+    const w1 = await readJson<{ id: string }>(
+      await createWorkspace(
+        new Request("http://localhost/api/workspaces", {
+          method: "POST",
+          headers: { "Content-Type": "application/json" },
+          body: JSON.stringify({ name: "WS1" }),
+        }),
+      ),
+    );
+    const w2 = await readJson<{ id: string }>(
+      await createWorkspace(
+        new Request("http://localhost/api/workspaces", {
+          method: "POST",
+          headers: { "Content-Type": "application/json" },
+          body: JSON.stringify({ name: "WS2" }),
+        }),
+      ),
+    );
+
+    const b1 = await readJson<{ id: string; workspaceId: string }>(
+      await createBoard(
+        new Request("http://localhost/api/boards", {
+          method: "POST",
+          headers: { "Content-Type": "application/json" },
+          body: JSON.stringify({ title: "In WS1", workspaceId: w1.id }),
+        }),
+      ),
+    );
+    expect(b1.workspaceId).toBe(w1.id);
+
+    const b2 = await readJson<{ id: string; workspaceId: string }>(
+      await createBoard(
+        new Request("http://localhost/api/boards", {
+          method: "POST",
+          headers: { "Content-Type": "application/json" },
+          body: JSON.stringify({ title: "In WS2", workspaceId: w2.id }),
+        }),
+      ),
+    );
+    expect(b2.workspaceId).toBe(w2.id);
+
+    const all = await readJson<{ boards: { id: string }[] }>(
+      await listBoards(new Request("http://localhost/api/boards")),
+    );
+    expect(all.boards).toHaveLength(2);
+
+    const scoped = await readJson<{ boards: { id: string }[] }>(
+      await listBoards(
+        new Request(
+          `http://localhost/api/boards?workspaceId=${encodeURIComponent(w1.id)}`,
+        ),
+      ),
+    );
+    expect(scoped.boards).toHaveLength(1);
+    expect(scoped.boards[0].id).toBe(b1.id);
+
+    const patched = await patchBoard(
+      new Request("http://localhost/api/boards/x", {
+        method: "PATCH",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({
+          title: " Renamed ",
+          description: "Hello",
+          visibility: "public",
+        }),
+      }),
+      { params: Promise.resolve({ boardId: b1.id }) },
+    );
+    expect(patched.status).toBe(200);
+    const pBody = await readJson<{
+      title: string;
+      description: string;
+      visibility: string;
+    }>(patched);
+    expect(pBody.title).toBe("Renamed");
+    expect(pBody.description).toBe("Hello");
+    expect(pBody.visibility).toBe("public");
+  });
+
+  it("POST board with unknown workspaceId returns 404", async () => {
+    const res = await createBoard(
+      new Request("http://localhost/api/boards", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ title: "Orphan", workspaceId: "no-such-ws" }),
+      }),
+    );
+    expect(res.status).toBe(404);
   });
 
   it("rejects invalid JSON on POST board", async () => {
@@ -242,7 +339,9 @@ describe("FlowBoard REST API", () => {
     );
     expect(delBoard.status).toBe(204);
 
-    const remaining = await readJson<{ boards: unknown[] }>(await listBoards());
+    const remaining = await readJson<{ boards: unknown[] }>(
+      await listBoards(new Request("http://localhost/api/boards")),
+    );
     expect(remaining.boards).toHaveLength(1);
   });
 

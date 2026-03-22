@@ -1,10 +1,20 @@
+import type { BoardVisibility } from "@prisma/client";
 import { NextResponse } from "next/server";
 
-import { jsonError } from "@/lib/http";
+import { jsonError, readJsonBody } from "@/lib/http";
 import { prisma } from "@/lib/prisma";
-import { toBoardDetailDTO } from "@/lib/serialize";
+import { toBoardDetailDTO, toBoardDTO } from "@/lib/serialize";
 
 export const dynamic = "force-dynamic";
+
+function parseVisibility(value: unknown): BoardVisibility | "invalid" | undefined {
+  if (value === undefined) return undefined;
+  if (typeof value !== "string") return "invalid";
+  if (value === "private" || value === "workspace" || value === "public") {
+    return value;
+  }
+  return "invalid";
+}
 
 export async function GET(
   _request: Request,
@@ -24,6 +34,67 @@ export async function GET(
     return jsonError("Board not found", 404);
   }
   return NextResponse.json(toBoardDetailDTO(board), {
+    headers: { "Content-Type": "application/json" },
+  });
+}
+
+export async function PATCH(
+  request: Request,
+  context: { params: Promise<{ boardId: string }> },
+) {
+  const { boardId } = await context.params;
+  const body = await readJsonBody<{
+    title?: unknown;
+    description?: unknown;
+    visibility?: unknown;
+  }>(request);
+  if (body === null) {
+    return jsonError("Invalid JSON body", 400);
+  }
+
+  const existing = await prisma.board.findUnique({ where: { id: boardId } });
+  if (!existing) {
+    return jsonError("Board not found", 404);
+  }
+
+  const data: {
+    title?: string;
+    description?: string;
+    visibility?: BoardVisibility;
+  } = {};
+
+  if (body.title !== undefined) {
+    if (typeof body.title !== "string" || !body.title.trim()) {
+      return jsonError("title must be a non-empty string", 400);
+    }
+    data.title = body.title.trim();
+  }
+  if (body.description !== undefined) {
+    if (typeof body.description !== "string") {
+      return jsonError("description must be a string", 400);
+    }
+    data.description = body.description;
+  }
+  if (body.visibility !== undefined) {
+    const v = parseVisibility(body.visibility);
+    if (v === "invalid") {
+      return jsonError(
+        "visibility must be one of: private, workspace, public",
+        400,
+      );
+    }
+    data.visibility = v;
+  }
+
+  if (Object.keys(data).length === 0) {
+    return jsonError("No valid fields to update", 400);
+  }
+
+  const board = await prisma.board.update({
+    where: { id: boardId },
+    data,
+  });
+  return NextResponse.json(toBoardDTO(board), {
     headers: { "Content-Type": "application/json" },
   });
 }

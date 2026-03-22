@@ -193,6 +193,27 @@ describe("FlowBoard REST API", () => {
     expect(pBody.visibility).toBe("public");
   });
 
+  it("PATCH board rejects invalid visibility", async () => {
+    const board = await readJson<{ id: string }>(
+      await createBoard(
+        new Request("http://localhost/api/boards", {
+          method: "POST",
+          body: JSON.stringify({ title: "Visibility guard" }),
+          headers: { "Content-Type": "application/json" },
+        }),
+      ),
+    );
+    const res = await patchBoard(
+      new Request("http://localhost/api/boards/x", {
+        method: "PATCH",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ visibility: "super-public" }),
+      }),
+      { params: Promise.resolve({ boardId: board.id }) },
+    );
+    expect(res.status).toBe(400);
+  });
+
   it("POST board with unknown workspaceId returns 404", async () => {
     const res = await createBoard(
       new Request("http://localhost/api/boards", {

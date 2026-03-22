@@ -13,13 +13,23 @@ import {
 } from "@dnd-kit/core";
 import { CSS } from "@dnd-kit/utilities";
 import { useRouter } from "next/navigation";
-import type { FormEvent } from "react";
+import type { FormEvent, ReactNode } from "react";
 import { useCallback, useEffect, useState } from "react";
 
 import type { BoardDetailDTO, CardDTO, ListDTO } from "@/lib/serialize";
 
 function droppableIdForList(listId: string) {
   return `droppable-list-${listId}`;
+}
+
+const COLUMN_DRAG_PREFIX = "column-drag-";
+const COLUMN_DROP_PREFIX = "column-drop-";
+
+function arrayMove<T>(arr: T[], from: number, to: number): T[] {
+  const next = [...arr];
+  const [item] = next.splice(from, 1);
+  next.splice(to, 0, item);
+  return next;
 }
 
 function CardRow({
@@ -133,7 +143,78 @@ function CardRow({
   );
 }
 
-function ListColumn({ list }: { list: ListDTO }) {
+function ColumnDragHandle({
+  listId,
+  title,
+}: {
+  listId: string;
+  title: string;
+}) {
+  const { attributes, listeners, setNodeRef, transform, isDragging } =
+    useDraggable({
+      id: `${COLUMN_DRAG_PREFIX}${listId}`,
+    });
+
+  const style = transform
+    ? { transform: CSS.Translate.toString(transform) }
+    : undefined;
+
+  return (
+    <div
+      ref={setNodeRef}
+      style={style}
+      className={`flex items-center gap-2 border-b border-zinc-200 px-2 py-2 dark:border-zinc-700 ${
+        isDragging ? "z-20 opacity-80" : ""
+      }`}
+    >
+      <button
+        type="button"
+        className="touch-none rounded p-1 text-zinc-500 hover:bg-zinc-200 hover:text-zinc-800 active:cursor-grabbing dark:hover:bg-zinc-800 dark:hover:text-zinc-200"
+        aria-label={`Reorder column ${title}`}
+        {...listeners}
+        {...attributes}
+      >
+        <span className="block text-xs leading-none" aria-hidden>
+          ⋮⋮
+        </span>
+      </button>
+      <h2
+        id={`list-${listId}-title`}
+        className="min-w-0 flex-1 text-sm font-semibold text-zinc-900 dark:text-zinc-50"
+      >
+        {title}
+      </h2>
+    </div>
+  );
+}
+
+function ColumnDropShell({
+  listId,
+  children,
+}: {
+  listId: string;
+  children: ReactNode;
+}) {
+  const { setNodeRef, isOver } = useDroppable({
+    id: `${COLUMN_DROP_PREFIX}${listId}`,
+  });
+
+  return (
+    <section
+      ref={setNodeRef}
+      className={`flex w-72 shrink-0 flex-col rounded-lg border border-zinc-200 bg-zinc-50 dark:border-zinc-700 dark:bg-zinc-900/50 ${
+        isOver
+          ? "ring-2 ring-zinc-400 dark:ring-zinc-500"
+          : ""
+      }`}
+      aria-labelledby={`list-${listId}-title`}
+    >
+      {children}
+    </section>
+  );
+}
+
+function ListColumnBody({ list }: { list: ListDTO }) {
   const router = useRouter();
   const [cardTitle, setCardTitle] = useState("");
   const [addPending, setAddPending] = useState(false);
@@ -174,18 +255,7 @@ function ListColumn({ list }: { list: ListDTO }) {
   }
 
   return (
-    <section
-      className="flex w-72 shrink-0 flex-col rounded-lg border border-zinc-200 bg-zinc-50 dark:border-zinc-700 dark:bg-zinc-900/50"
-      aria-labelledby={`list-${list.id}-title`}
-    >
-      <div className="border-b border-zinc-200 px-3 py-2 dark:border-zinc-700">
-        <h2
-          id={`list-${list.id}-title`}
-          className="text-sm font-semibold text-zinc-900 dark:text-zinc-50"
-        >
-          {list.title}
-        </h2>
-      </div>
+    <>
       <div className="flex min-h-[120px] flex-1 flex-col px-2 py-2">
         <div
           ref={setNodeRef}
@@ -239,24 +309,89 @@ function ListColumn({ list }: { list: ListDTO }) {
           </button>
         </form>
       </div>
-    </section>
+    </>
   );
 }
 
 export function BoardListsView({ board }: { board: BoardDetailDTO }) {
   const router = useRouter();
+  const [lists, setLists] = useState(board.lists);
   const [title, setTitle] = useState("");
   const [error, setError] = useState<string | null>(null);
   const [pending, setPending] = useState(false);
+  const [columnReorderError, setColumnReorderError] = useState<string | null>(
+    null,
+  );
 
-  const sensors = useSensors(
+  useEffect(() => {
+    setLists(board.lists);
+  }, [board.lists]);
+
+  const columnSensors = useSensors(
     useSensor(PointerSensor, {
       activationConstraint: { distance: 8 },
     }),
     useSensor(KeyboardSensor),
   );
 
-  const onDragEnd = useCallback(
+  const cardSensors = useSensors(
+    useSensor(PointerSensor, {
+      activationConstraint: { distance: 8 },
+    }),
+    useSensor(KeyboardSensor),
+  );
+
+  const onColumnDragEnd = useCallback(
+    async (event: DragEndEvent) => {
+      setColumnReorderError(null);
+      const { active, over } = event;
+      if (!over) return;
+
+      const a = String(active.id);
+      const o = String(over.id);
+      if (!a.startsWith(COLUMN_DRAG_PREFIX) || !o.startsWith(COLUMN_DROP_PREFIX)) {
+        return;
+      }
+      const fromListId = a.slice(COLUMN_DRAG_PREFIX.length);
+      const toListId = o.slice(COLUMN_DROP_PREFIX.length);
+      if (fromListId === toListId) return;
+
+      const oldIndex = lists.findIndex((l) => l.id === fromListId);
+      const newIndex = lists.findIndex((l) => l.id === toListId);
+      if (oldIndex < 0 || newIndex < 0) return;
+
+      const reordered = arrayMove(lists, oldIndex, newIndex);
+      const previous = lists;
+      setLists(reordered);
+
+      const res = await fetch(
+        `/api/boards/${board.id}/lists/reorder`,
+        {
+          method: "POST",
+          headers: { "Content-Type": "application/json" },
+          body: JSON.stringify({
+            listIds: reordered.map((l) => l.id),
+          }),
+        },
+      );
+
+      if (!res.ok) {
+        setLists(previous);
+        const body = (await res.json().catch(() => ({}))) as {
+          error?: string;
+        };
+        setColumnReorderError(
+          body.error ?? `Could not reorder columns (${res.status})`,
+        );
+        return;
+      }
+
+      router.refresh();
+    },
+    [board.id, lists, router],
+  );
+
+  const onCardDragEnd = useCallback(
     async (event: DragEndEvent) => {
       const { active, over } = event;
       if (!over) return;
@@ -269,7 +404,7 @@ export function BoardListsView({ board }: { board: BoardDetailDTO }) {
       const targetListId = overId.slice(prefix.length);
 
       let sourceListId: string | null = null;
-      for (const l of board.lists) {
+      for (const l of lists) {
         if (l.cards.some((c) => c.id === cardId)) {
           sourceListId = l.id;
           break;
@@ -278,7 +413,7 @@ export function BoardListsView({ board }: { board: BoardDetailDTO }) {
       if (!sourceListId) return;
       if (sourceListId === targetListId) return;
 
-      const targetList = board.lists.find((l) => l.id === targetListId);
+      const targetList = lists.find((l) => l.id === targetListId);
       if (!targetList) return;
 
       const maxPos = targetList.cards.reduce(
@@ -300,7 +435,7 @@ export function BoardListsView({ board }: { board: BoardDetailDTO }) {
         router.refresh();
       }
     },
-    [board.lists, router],
+    [lists, router],
   );
 
   async function onSubmitList(e: FormEvent) {
@@ -337,13 +472,27 @@ export function BoardListsView({ board }: { board: BoardDetailDTO }) {
 
   return (
     <DndContext
-      sensors={sensors}
+      sensors={columnSensors}
       collisionDetection={closestCorners}
-      onDragEnd={(e) => void onDragEnd(e)}
+      onDragEnd={(e) => void onColumnDragEnd(e)}
     >
+      {columnReorderError ? (
+        <p className="mb-2 text-sm text-red-600 dark:text-red-400" role="alert">
+          {columnReorderError}
+        </p>
+      ) : null}
       <div className="mt-8 flex gap-4 overflow-x-auto pb-2">
-        {board.lists.map((list) => (
-          <ListColumn key={list.id} list={list} />
+        {lists.map((list) => (
+          <ColumnDropShell key={list.id} listId={list.id}>
+            <ColumnDragHandle listId={list.id} title={list.title} />
+            <DndContext
+              sensors={cardSensors}
+              collisionDetection={closestCorners}
+              onDragEnd={(e) => void onCardDragEnd(e)}
+            >
+              <ListColumnBody list={list} />
+            </DndContext>
+          </ColumnDropShell>
         ))}
 
         <div className="w-72 shrink-0 rounded-lg border border-dashed border-zinc-300 bg-white p-3 dark:border-zinc-600 dark:bg-zinc-950">

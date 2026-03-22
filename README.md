@@ -1,22 +1,24 @@
 # FlowBoard
 
-FlowBoard is a **demo through sprint-2**: kanban **workspaces** (structural), **boards**, **lists**, and **cards** with drag-and-drop (cards between lists, columns reorder on the board), backed by **Prisma** + **SQLite** and a **Next.js** (App Router) UI and REST API.
+FlowBoard is a **demo through sprint-3**: kanban **workspaces** (structural), **boards**, **lists**, and **cards** with drag-and-drop (reorder cards inside a column, move cards between lists, reorder columns on the board), backed by **Prisma** + **SQLite** and a **Next.js** (App Router) UI and REST API.
 
 ## Repository layout
 
 - **Repository root** — FlowBoard app (`package.json`, `app/`, `lib/`, `prisma/`, `tests/`). Run **`npm install`**, **`npm run dev`**, **`npm test`**, and **`npm run build`** here.
 - **`pinion/`** — Pinion coordination only (task graph, work units, generated views). It is **not** part of the shipped app. Contributors updating Pinion state should run **`cd pinion && ./bin/pinion build`** to refresh the graph and views; command details and agent-oriented notes live in **[pinion/AGENTS.md](pinion/AGENTS.md)**.
 
-## Sprint-2 scope and limitations
+## Sprint-3 scope and limitations
 
 This release is still **single-user** and **local-first**. **Workspaces are structural only** — they organize boards in the data model and API; there is **no login**, **no membership**, and **no permission enforcement**.
 
-**Shipped in sprint-2:**
+**Shipped in sprint-3 (UI + API):**
 
-- **Workspace** records with `GET`/`POST` `/api/workspaces` and `GET /api/workspaces/[id]` (includes board summaries, not nested lists/cards).
-- **Boards** belong to a workspace (`workspaceId` on create; optional body field, otherwise a default workspace). **`GET /api/boards?workspaceId=…`** filters by workspace; omit the query to list all boards. **`PATCH /api/boards/[boardId]`** updates `title`, `description`, and `visibility` (`private` | `workspace` | `public`).
-- **Cards** support **`archived`** and **`dueDate`** via **`PATCH /api/cards/[cardId]`**; `dueDate: null` clears the date. **`GET /api/boards/[boardId]`** omits archived cards by default; use **`?includeArchived=true`** (or `1` / `yes`) to include them.
-- **List order:** **`POST /api/boards/[boardId]/lists/reorder`** with `{ "listIds": [ … ] }` (full permutation, dense `position` values). The board UI exposes column reorder via the **`⋮⋮`** handle and the same API.
+- **Workspace API** — `GET`/`POST` `/api/workspaces` and `GET /api/workspaces/[id]` (board summaries on detail, not nested lists/cards).
+- **Board index (`/boards`)** — Choose a workspace (links + **`?workspaceId=`** in the URL), create workspaces, and create boards scoped to the selected workspace. Server actions pass **`workspaceId`** on create (falls back to the default workspace only when omitted).
+- **Board page** — Edit **description** and **visibility** ( **`PATCH /api/boards/[boardId]`** ). Optional **Show archived cards** uses the same **`includeArchived`** query semantics as **`GET /api/boards/[boardId]`**. Cards support a **Details** panel for **description**, **due date**, and **archived** ( **`PATCH /api/cards/[cardId]`** ).
+- **Column order** — **`POST /api/boards/[boardId]/lists/reorder`** with `{ "listIds": [ … ] }` (full permutation, dense positions). The UI uses the column **`⋮⋮`** handle.
+- **Card order inside a column** — **`POST /api/lists/[listId]/cards/reorder`** with `{ "cardIds": [ … ] }` (full permutation, dense positions). The UI uses **`@dnd-kit/sortable`** (grip **`⋮⋮`** on each card) inside the same client-only board gate as other DnD (see **[AGENTS.md](AGENTS.md)**).
+- **Cross-list card moves** — Still **`PATCH /api/cards/[cardId]`** with `listId` + `position` when dropping onto another column.
 
 **Still not shipped (do not assume from this README):**
 
@@ -24,7 +26,7 @@ This release is still **single-user** and **local-first**. **Workspaces are stru
 - **No invites, roles, or workspace permissions** — the visibility field is stored for API/PRD alignment; it is **not** enforced for multiple users.
 - **No realtime collaboration** — no websockets, presence, or coordinated concurrent edits.
 
-**Deferred beyond sprint-2:** production auth, team/workspace membership, realtime updates, comments/labels/attachments, and other PRD items not listed above.
+**Deferred beyond sprint-3:** production auth, team/workspace membership, realtime updates, PostgreSQL as the default demo database, comments/labels/attachments at PRD scale, and other PRD items not listed above.
 
 ## Quick start (new contributors)
 
@@ -52,7 +54,7 @@ npm run db:migrate
 npm run dev
 ```
 
-Open [http://localhost:3000](http://localhost:3000). Use **`/boards`** for the board index and **`/boards/[id]`** for a board (create a board from the UI or via `POST /api/boards`).
+Open [http://localhost:3000](http://localhost:3000). Use **`/boards`** for the workspace-aware board index (optional **`?workspaceId=`**) and **`/boards/[id]`** for a board.
 
 ### Environment
 
@@ -85,6 +87,7 @@ Base path: **`/api`**. Errors use **`{ "error": "..." }`** with **4xx** where ap
 | `PATCH` | `/api/boards/[boardId]` | Body `{ "title"?, "description"?, "visibility"? }` |
 | `DELETE` | `/api/boards/[boardId]` | Cascades lists and cards |
 | `POST` | `/api/boards/[boardId]/lists/reorder` | Body `{ "listIds": string[] }` — every list on the board, exactly once |
+| `POST` | `/api/lists/[listId]/cards/reorder` | Body `{ "cardIds": string[] }` — every card in the list, exactly once |
 | `POST` | `/api/lists` | Body `{ "boardId", "title", "position"? }` |
 | `PATCH` | `/api/lists/[listId]` | Body `{ "title"?, "position"? }` |
 | `DELETE` | `/api/lists/[listId]` | |
@@ -92,7 +95,7 @@ Base path: **`/api`**. Errors use **`{ "error": "..." }`** with **4xx** where ap
 | `PATCH` | `/api/cards/[cardId]` | Body `{ "title"?, "description"?, "listId"?, "position"?, "archived"?, "dueDate"? }` — `dueDate` ISO string or **`null`** to clear; `listId` only within the **same board** |
 | `DELETE` | `/api/cards/[cardId]` | |
 
-Run **`npm test`** for automated API coverage (workspaces, scoped boards, board PATCH, cards archive/due date, list reorder, and sprint-path regression).
+Run **`npm test`** for automated API coverage (workspaces, scoped boards, board PATCH, cards archive/due date, list and **in-list card** reorder, and sprint-path regression).
 
 ## Learn more
 

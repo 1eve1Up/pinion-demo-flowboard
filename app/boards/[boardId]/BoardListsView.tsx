@@ -44,6 +44,80 @@ function datetimeLocalValueToIso(value: string): string | null {
   return d.toISOString();
 }
 
+type CardDueTone = "none" | "soon" | "today" | "overdue";
+
+/** Compact due label for the card face; uses local calendar day boundaries. */
+function cardDueMeta(iso: string | null): {
+  label: string;
+  title: string;
+  tone: CardDueTone;
+} | null {
+  if (!iso) return null;
+  const d = new Date(iso);
+  if (Number.isNaN(d.getTime())) return null;
+
+  const startOfDay = (x: Date) =>
+    new Date(x.getFullYear(), x.getMonth(), x.getDate()).getTime();
+  const now = new Date();
+  const startToday = startOfDay(now);
+  const startDue = startOfDay(d);
+  const dayMs = 86_400_000;
+  const diffDays = Math.round((startDue - startToday) / dayMs);
+
+  const hasClock = d.getHours() !== 0 || d.getMinutes() !== 0;
+  const timeSuffix = hasClock
+    ? ` · ${d.toLocaleTimeString(undefined, { hour: "numeric", minute: "2-digit" })}`
+    : "";
+
+  const title = hasClock
+    ? d.toLocaleString(undefined, {
+        dateStyle: "full",
+        timeStyle: "short",
+      })
+    : d.toLocaleDateString(undefined, { dateStyle: "full" });
+
+  if (diffDays < 0) {
+    const label =
+      diffDays === -1
+        ? `Yesterday${timeSuffix}`
+        : `${d.toLocaleDateString(undefined, { month: "short", day: "numeric" })}${timeSuffix}`;
+    return { label, title, tone: "overdue" };
+  }
+  if (diffDays === 0) {
+    return { label: `Today${timeSuffix}`, title, tone: "today" };
+  }
+  if (diffDays === 1) {
+    return { label: `Tomorrow${timeSuffix}`, title, tone: "soon" };
+  }
+  if (diffDays <= 7) {
+    return {
+      label: `${d.toLocaleDateString(undefined, { weekday: "short", month: "short", day: "numeric" })}${timeSuffix}`,
+      title,
+      tone: "soon",
+    };
+  }
+  return {
+    label: `${d.toLocaleDateString(undefined, { month: "short", day: "numeric" })}${timeSuffix}`,
+    title,
+    tone: "none",
+  };
+}
+
+function dueChipClass(tone: CardDueTone): string {
+  const base =
+    "inline-flex max-w-full min-w-0 items-center rounded-full px-1.5 py-0.5 text-[10px] font-medium tabular-nums";
+  switch (tone) {
+    case "overdue":
+      return `${base} bg-red-100 text-red-900 dark:bg-red-950 dark:text-red-100`;
+    case "today":
+      return `${base} bg-amber-100 text-amber-950 dark:bg-amber-950 dark:text-amber-100`;
+    case "soon":
+      return `${base} bg-amber-50 text-amber-900 dark:bg-amber-950/80 dark:text-amber-100`;
+    default:
+      return `${base} bg-zinc-100 text-zinc-700 dark:bg-zinc-800 dark:text-zinc-200`;
+  }
+}
+
 const COLUMN_DRAG_PREFIX = "column-drag-";
 const COLUMN_DROP_PREFIX = "column-drop-";
 
@@ -182,10 +256,13 @@ function CardDetailPanel({
 function CardRow({
   card,
   listId,
+  includeArchived,
   onSaved,
 }: {
   card: CardDTO;
   listId: string;
+  /** When true, archived cards may appear and should show a clear badge. */
+  includeArchived: boolean;
   onSaved: () => void;
 }) {
   const [editing, setEditing] = useState(false);
@@ -248,6 +325,9 @@ function CardRow({
       setSaving(false);
     }
   }
+
+  const dueMeta = cardDueMeta(card.dueDate);
+  const showArchivedBadge = includeArchived && card.archived;
 
   if (editing) {
     return (
@@ -318,9 +398,24 @@ function CardRow({
           >
             {card.title}
           </span>
-          {card.archived ? (
-            <span className="ml-1 text-[10px] font-medium uppercase text-zinc-400">
-              archived
+          {dueMeta || showArchivedBadge ? (
+            <span className="mt-1 flex flex-wrap items-center gap-1">
+              {dueMeta ? (
+                <span
+                  className={dueChipClass(dueMeta.tone)}
+                  title={dueMeta.title}
+                >
+                  Due {dueMeta.label}
+                </span>
+              ) : null}
+              {showArchivedBadge ? (
+                <span
+                  className="inline-flex items-center rounded-full border border-zinc-300 bg-zinc-100 px-1.5 py-0.5 text-[10px] font-semibold uppercase tracking-wide text-zinc-600 dark:border-zinc-600 dark:bg-zinc-800 dark:text-zinc-300"
+                  title="Archived card"
+                >
+                  Archived
+                </span>
+              ) : null}
             </span>
           ) : null}
         </button>
@@ -414,7 +509,13 @@ function ColumnDropShell({
   );
 }
 
-function ListColumnBody({ list }: { list: ListDTO }) {
+function ListColumnBody({
+  list,
+  includeArchived,
+}: {
+  list: ListDTO;
+  includeArchived: boolean;
+}) {
   const router = useRouter();
   const [cardTitle, setCardTitle] = useState("");
   const [addPending, setAddPending] = useState(false);
@@ -480,6 +581,7 @@ function ListColumnBody({ list }: { list: ListDTO }) {
                     key={c.id}
                     card={c}
                     listId={list.id}
+                    includeArchived={includeArchived}
                     onSaved={() => router.refresh()}
                   />
                 ))}
@@ -771,7 +873,7 @@ export function BoardListsView({
               collisionDetection={closestCorners}
               onDragEnd={(e) => void onCardDragEnd(e)}
             >
-              <ListColumnBody list={list} />
+              <ListColumnBody list={list} includeArchived={includeArchived} />
             </DndContext>
           </ColumnDropShell>
         ))}

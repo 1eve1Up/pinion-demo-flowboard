@@ -2,7 +2,7 @@
 
 import { useRouter } from "next/navigation";
 import type { FormEvent } from "react";
-import { useEffect, useId, useState } from "react";
+import { useEffect, useState } from "react";
 
 import type { BoardDTO } from "@/lib/serialize";
 
@@ -24,7 +24,8 @@ export function BoardMetaEditor({
   initialVisibility: BoardVisibility;
 }) {
   const router = useRouter();
-  const panelId = useId();
+  const panelId = `board-${boardId}-settings-panel`;
+  const fieldsRegionId = `${panelId}-fields`;
   const [settingsOpen, setSettingsOpen] = useState(true);
   const [description, setDescription] = useState(initialDescription);
   const [visibility, setVisibility] =
@@ -62,22 +63,22 @@ export function BoardMetaEditor({
   }
 
   return (
-    <div className="mt-4 max-w-2xl">
+    <form
+      id={panelId}
+      className="mt-4 max-w-2xl space-y-3 rounded-lg border border-zinc-200 bg-zinc-50/80 p-4 dark:border-zinc-700 dark:bg-zinc-900/40"
+      onSubmit={(e) => void onSubmit(e)}
+    >
       <button
         type="button"
         aria-expanded={settingsOpen}
-        aria-controls={panelId}
+        aria-controls={fieldsRegionId}
         onClick={() => setSettingsOpen((o) => !o)}
         className="text-sm font-medium text-foreground underline-offset-4 hover:underline focus-visible:rounded focus-visible:outline focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-ring"
       >
         {settingsOpen ? "Hide board settings" : "Board settings"}
       </button>
       {settingsOpen ? (
-        <form
-          id={panelId}
-          onSubmit={(e) => void onSubmit(e)}
-          className="mt-3 space-y-3 rounded-lg border border-zinc-200 bg-zinc-50/80 p-4 dark:border-zinc-700 dark:bg-zinc-900/40"
-        >
+        <div id={fieldsRegionId} className="space-y-3">
           <div>
             <label
               htmlFor={`board-${boardId}-description`}
@@ -135,8 +136,8 @@ export function BoardMetaEditor({
               {error}
             </p>
           ) : null}
-        </form>
+        </div>
       ) : null}
-    </div>
+    </form>
   );
 }

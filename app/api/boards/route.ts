@@ -1,5 +1,6 @@
 import { NextResponse } from "next/server";
 
+import { getDefaultWorkspaceId } from "@/lib/default-workspace";
 import { jsonError, readJsonBody } from "@/lib/http";
 import { prisma } from "@/lib/prisma";
 import { toBoardDTO } from "@/lib/serialize";
@@ -23,7 +24,8 @@ export async function POST(request: Request) {
   if (!title) {
     return jsonError("title is required", 400);
   }
-  const board = await prisma.board.create({ data: { title } });
+  const workspaceId = await getDefaultWorkspaceId();
+  const board = await prisma.board.create({ data: { title, workspaceId } });
   return NextResponse.json(toBoardDTO(board), {
     status: 201,
     headers: { "Content-Type": "application/json" },

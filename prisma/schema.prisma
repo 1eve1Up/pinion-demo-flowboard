@@ -1,4 +1,4 @@
-// FlowBoard — Board → List → Card (SQLite for sprint; positions for ordering)
+// FlowBoard — Workspace → Board → List → Card (SQLite for sprint; positions for ordering)
 
 generator client {
   provider = "prisma-client-js"
@@ -9,11 +9,30 @@ datasource db {
   url      = env("DATABASE_URL")
 }
 
-model Board {
+enum BoardVisibility {
+  private
+  workspace
+  public
+}
+
+model Workspace {
   id        String   @id @default(cuid())
-  title     String
+  name      String   @default("Default")
   createdAt DateTime @default(now())
-  lists     List[]
+  boards    Board[]
+}
+
+model Board {
+  id          String          @id @default(cuid())
+  title       String
+  description String          @default("")
+  visibility  BoardVisibility @default(private)
+  createdAt   DateTime        @default(now())
+  workspaceId String
+  workspace   Workspace       @relation(fields: [workspaceId], references: [id], onDelete: Restrict, onUpdate: Cascade)
+  lists       List[]
+
+  @@index([workspaceId])
 }
 
 model List {
@@ -29,13 +48,15 @@ model List {
 }
 
 model Card {
-  id          String   @id @default(cuid())
+  id          String    @id @default(cuid())
   listId      String
-  list        List     @relation(fields: [listId], references: [id], onDelete: Cascade)
+  list        List      @relation(fields: [listId], references: [id], onDelete: Cascade)
   title       String
-  description String   @default("")
-  position    Int      @default(0)
-  createdAt   DateTime @default(now())
+  description String    @default("")
+  position    Int       @default(0)
+  archived    Boolean   @default(false)
+  dueDate     DateTime?
+  createdAt   DateTime  @default(now())
 
   @@index([listId])
 }

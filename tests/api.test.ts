@@ -16,6 +16,7 @@ beforeEach(async () => {
   await prisma.card.deleteMany();
   await prisma.list.deleteMany();
   await prisma.board.deleteMany();
+  await prisma.workspace.deleteMany();
 });
 
 afterAll(async () => {

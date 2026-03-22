@@ -1,13 +1,13 @@
 # FlowBoard
 
-FlowBoard is a **demo through sprint-3**: kanban **workspaces** (structural), **boards**, **lists**, and **cards** with drag-and-drop (reorder cards inside a column, move cards between lists, reorder columns on the board), backed by **Prisma** + **SQLite** and a **Next.js** (App Router) UI and REST API.
+FlowBoard is a **demo through sprint-4**: kanban **workspaces** (structural), **boards**, **lists**, and **cards** with drag-and-drop (reorder cards inside a column, move cards between lists, reorder columns on the board), backed by **Prisma** + **SQLite** and a **Next.js** (App Router) UI and REST API. Sprint-4 focused on **UI polish** (typography, navigation context, due-date chips on cards, visible DnD error feedback, card-details keyboard/accessibility, loading skeleton for the board canvas); **auth, realtime, and Postgres are still out of scope** (see below and **[AGENTS.md](AGENTS.md)** for the client-only DnD boundary).
 
 ## Repository layout
 
 - **Repository root** — FlowBoard app (`package.json`, `app/`, `lib/`, `prisma/`, `tests/`). Run **`npm install`**, **`npm run dev`**, **`npm test`**, and **`npm run build`** here.
 - **`pinion/`** — Pinion coordination only (task graph, work units, generated views). It is **not** part of the shipped app. Contributors updating Pinion state should run **`cd pinion && ./bin/pinion build`** to refresh the graph and views; command details and agent-oriented notes live in **[pinion/AGENTS.md](pinion/AGENTS.md)**.
 
-## Sprint-3 scope and limitations
+## Scope and limitations
 
 This release is still **single-user** and **local-first**. **Workspaces are structural only** — they organize boards in the data model and API; there is **no login**, **no membership**, and **no permission enforcement**.
 

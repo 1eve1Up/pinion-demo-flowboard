@@ -12,8 +12,27 @@ export async function createBoard(formData: FormData) {
     redirect("/boards?error=missing-title");
   }
 
-  const workspaceId = await getDefaultWorkspaceId();
+  const rawWs = formData.get("workspaceId")?.toString().trim();
+  let workspaceId: string;
+  if (rawWs) {
+    const ws = await prisma.workspace.findUnique({ where: { id: rawWs } });
+    if (!ws) {
+      redirect("/boards?error=missing-workspace");
+    }
+    workspaceId = ws.id;
+  } else {
+    workspaceId = await getDefaultWorkspaceId();
+  }
+
   const board = await prisma.board.create({ data: { title, workspaceId } });
   revalidatePath("/boards");
   redirect(`/boards/${board.id}`);
+}
+
+export async function createWorkspace(formData: FormData) {
+  const name = formData.get("name")?.toString().trim();
+  const finalName = name && name.length > 0 ? name : "New workspace";
+  const ws = await prisma.workspace.create({ data: { name: finalName } });
+  revalidatePath("/boards");
+  redirect(`/boards?workspaceId=${encodeURIComponent(ws.id)}`);
 }

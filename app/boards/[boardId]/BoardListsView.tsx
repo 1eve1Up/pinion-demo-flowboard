@@ -11,9 +11,15 @@ import {
   useSensor,
   useSensors,
 } from "@dnd-kit/core";
+import {
+  SortableContext,
+  sortableKeyboardCoordinates,
+  useSortable,
+  verticalListSortingStrategy,
+} from "@dnd-kit/sortable";
 import { CSS } from "@dnd-kit/utilities";
 import { useRouter } from "next/navigation";
-import type { FormEvent, ReactNode } from "react";
+import type { CSSProperties, FormEvent, ReactNode } from "react";
 import { useCallback, useEffect, useState } from "react";
 
 import type { BoardDetailDTO, CardDTO, ListDTO } from "@/lib/serialize";
@@ -188,15 +194,23 @@ function CardRow({
   const [saving, setSaving] = useState(false);
   const [error, setError] = useState<string | null>(null);
 
-  const { attributes, listeners, setNodeRef, transform, isDragging } =
-    useDraggable({
-      id: card.id,
-      disabled: editing || expanded,
-    });
+  const {
+    attributes,
+    listeners,
+    setNodeRef,
+    setActivatorNodeRef,
+    transform,
+    transition,
+    isDragging,
+  } = useSortable({
+    id: card.id,
+    disabled: editing || expanded,
+  });
 
-  const dragStyle = transform
-    ? { transform: CSS.Translate.toString(transform) }
-    : undefined;
+  const dragStyle: CSSProperties = {
+    transform: CSS.Transform.toString(transform),
+    transition,
+  };
 
   useEffect(() => {
     setTitle(card.title);
@@ -237,7 +251,11 @@ function CardRow({
 
   if (editing) {
     return (
-      <li className="rounded border border-zinc-300 bg-white p-1 dark:border-zinc-500 dark:bg-zinc-950">
+      <li
+        ref={setNodeRef}
+        style={dragStyle}
+        className="rounded border border-zinc-300 bg-white p-1 dark:border-zinc-500 dark:bg-zinc-950"
+      >
         <input
           autoFocus
           value={title}
@@ -275,6 +293,7 @@ function CardRow({
     >
       <div className="flex items-stretch gap-0.5 p-0.5">
         <button
+          ref={setActivatorNodeRef}
           type="button"
           className="touch-none shrink-0 cursor-grab rounded px-1 py-1.5 text-zinc-400 hover:bg-zinc-100 active:cursor-grabbing dark:hover:bg-zinc-800"
           aria-label={`Drag card ${card.title}`}
@@ -451,16 +470,21 @@ function ListColumnBody({ list }: { list: ListDTO }) {
               Drop cards here or add below
             </p>
           ) : (
-            <ul className="space-y-1">
-              {list.cards.map((c) => (
-                <CardRow
-                  key={c.id}
-                  card={c}
-                  listId={list.id}
-                  onSaved={() => router.refresh()}
-                />
-              ))}
-            </ul>
+            <SortableContext
+              items={list.cards.map((c) => c.id)}
+              strategy={verticalListSortingStrategy}
+            >
+              <ul className="space-y-1">
+                {list.cards.map((c) => (
+                  <CardRow
+                    key={c.id}
+                    card={c}
+                    listId={list.id}
+                    onSaved={() => router.refresh()}
+                  />
+                ))}
+              </ul>
+            </SortableContext>
           )}
         </div>
         <form
@@ -526,7 +550,9 @@ export function BoardListsView({
     useSensor(PointerSensor, {
       activationConstraint: { distance: 8 },
     }),
-    useSensor(KeyboardSensor),
+    useSensor(KeyboardSensor, {
+      coordinateGetter: sortableKeyboardCoordinates,
+    }),
   );
 
   const onColumnDragEnd = useCallback(
@@ -584,21 +610,82 @@ export function BoardListsView({
       const { active, over } = event;
       if (!over) return;
 
-      const cardId = String(active.id);
+      const activeId = String(active.id);
       const overId = String(over.id);
-      const prefix = "droppable-list-";
-      if (!overId.startsWith(prefix)) return;
+      const droppablePrefix = "droppable-list-";
 
-      const targetListId = overId.slice(prefix.length);
-
+      let sourceList: ListDTO | undefined;
       let sourceListId: string | null = null;
       for (const l of lists) {
-        if (l.cards.some((c) => c.id === cardId)) {
+        if (l.cards.some((c) => c.id === activeId)) {
+          sourceList = l;
           sourceListId = l.id;
           break;
         }
       }
-      if (!sourceListId) return;
+      if (!sourceList || !sourceListId) return;
+
+      const overIsCard = lists.some((l) =>
+        l.cards.some((c) => c.id === overId),
+      );
+
+      if (overIsCard) {
+        const overList = lists.find((l) => l.cards.some((c) => c.id === overId));
+        if (!overList) return;
+
+        if (overList.id === sourceListId) {
+          const oldIndex = sourceList.cards.findIndex((c) => c.id === activeId);
+          const newIndex = sourceList.cards.findIndex((c) => c.id === overId);
+          if (oldIndex < 0 || newIndex < 0 || oldIndex === newIndex) return;
+
+          const reordered = arrayMove(sourceList.cards, oldIndex, newIndex);
+          const previous = lists;
+          setLists(
+            lists.map((l) =>
+              l.id === sourceListId ? { ...l, cards: reordered } : l,
+            ),
+          );
+
+          const res = await fetch(`/api/lists/${sourceListId}/cards/reorder`, {
+            method: "POST",
+            headers: { "Content-Type": "application/json" },
+            body: JSON.stringify({
+              cardIds: reordered.map((c) => c.id),
+            }),
+          });
+
+          if (!res.ok) {
+            setLists(previous);
+            return;
+          }
+          router.refresh();
+          return;
+        }
+
+        const maxPos = overList.cards.reduce(
+          (m, c) => Math.max(m, c.position),
+          -1,
+        );
+        const newPosition = maxPos + 1;
+
+        const res = await fetch(`/api/cards/${activeId}`, {
+          method: "PATCH",
+          headers: { "Content-Type": "application/json" },
+          body: JSON.stringify({
+            listId: overList.id,
+            position: newPosition,
+          }),
+        });
+
+        if (res.ok) {
+          router.refresh();
+        }
+        return;
+      }
+
+      if (!overId.startsWith(droppablePrefix)) return;
+
+      const targetListId = overId.slice(droppablePrefix.length);
       if (sourceListId === targetListId) return;
 
       const targetList = lists.find((l) => l.id === targetListId);
@@ -610,7 +697,7 @@ export function BoardListsView({
       );
       const newPosition = maxPos + 1;
 
-      const res = await fetch(`/api/cards/${cardId}`, {
+      const res = await fetch(`/api/cards/${activeId}`, {
         method: "PATCH",
         headers: { "Content-Type": "application/json" },
         body: JSON.stringify({

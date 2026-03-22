@@ -108,4 +108,4 @@ Deploy like any Next.js app (e.g. [Vercel](https://vercel.com/)); set **`DATABAS
 
 ## Pinion-Built
 
-This repo is built by Level Up's Pinion
+This repo is built by Level Up's Pinion.

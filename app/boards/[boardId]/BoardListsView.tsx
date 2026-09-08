@@ -24,7 +24,7 @@ import { useCallback, useEffect, useRef, useState } from "react";
 
 import { cardDueMeta, type CardDueTone } from "@/lib/card-due-meta";
 import { readApiErrorMessage } from "@/lib/read-api-error";
-import type { BoardDetailDTO, CardDTO, ListDTO } from "@/lib/serialize";
+import type { BoardDetailDTO, CardDTO, LabelDTO, ListDTO } from "@/lib/serialize";
 
 function droppableIdForList(listId: string) {
   return `droppable-list-${listId}`;
@@ -71,14 +71,25 @@ function arrayMove<T>(arr: T[], from: number, to: number): T[] {
   return next;
 }
 
+function labelChipStyle(color: string | null): CSSProperties | undefined {
+  if (!color) return undefined;
+  return {
+    backgroundColor: `${color}22`,
+    color: color,
+    borderColor: `${color}66`,
+  };
+}
+
 function CardDetailPanel({
   card,
+  boardLabels,
   panelId,
   labelledById,
   onSaved,
   onClose,
 }: {
   card: CardDTO;
+  boardLabels: LabelDTO[];
   panelId: string;
   labelledById: string;
   onSaved: () => void;
@@ -90,6 +101,9 @@ function CardDetailPanel({
     isoToDatetimeLocalValue(card.dueDate),
   );
   const [archived, setArchived] = useState(card.archived);
+  const [assignedIds, setAssignedIds] = useState(
+    () => new Set(card.labels.map((l) => l.id)),
+  );
   const [saving, setSaving] = useState(false);
   const [error, setError] = useState<string | null>(null);
 
@@ -97,7 +111,8 @@ function CardDetailPanel({
     setDescription(card.description);
     setDueLocal(isoToDatetimeLocalValue(card.dueDate));
     setArchived(card.archived);
-  }, [card.id, card.description, card.dueDate, card.archived]);
+    setAssignedIds(new Set(card.labels.map((l) => l.id)));
+  }, [card.id, card.description, card.dueDate, card.archived, card.labels]);
 
   useEffect(() => {
     descriptionRef.current?.focus();
@@ -113,6 +128,29 @@ function CardDetailPanel({
     document.addEventListener("keydown", onKeyDown, true);
     return () => document.removeEventListener("keydown", onKeyDown, true);
   }, [onClose]);
+
+  async function toggleLabel(labelId: string, next: boolean) {
+    setError(null);
+    setSaving(true);
+    try {
+      const res = await fetch(`/api/cards/${card.id}/labels/${labelId}`, {
+        method: next ? "PUT" : "DELETE",
+      });
+      if (!res.ok) {
+        setError(await readApiErrorMessage(res, `Label update failed (${res.status})`));
+        return;
+      }
+      setAssignedIds((prev) => {
+        const copy = new Set(prev);
+        if (next) copy.add(labelId);
+        else copy.delete(labelId);
+        return copy;
+      });
+      onSaved();
+    } finally {
+      setSaving(false);
+    }
+  }
 
   async function saveDetails() {
     setError(null);
@@ -192,6 +230,44 @@ function CardDetailPanel({
           className="mt-0.5 w-full rounded border border-zinc-300 bg-white px-1.5 py-1 text-xs outline-none ring-zinc-400 focus-visible:ring-2 dark:border-zinc-600 dark:bg-zinc-950"
         />
       </div>
+      <fieldset className="space-y-1">
+        <legend className="text-[10px] font-medium uppercase text-zinc-500 dark:text-zinc-400">
+          Labels
+        </legend>
+        {boardLabels.length === 0 ? (
+          <p className="text-[11px] text-zinc-500">
+            Create labels in the board Labels section first.
+          </p>
+        ) : (
+          boardLabels.map((lab) => {
+            const inputId = `card-${card.id}-label-${lab.id}`;
+            const checked = assignedIds.has(lab.id);
+            return (
+              <div
+                key={lab.id}
+                className="flex items-center gap-2 text-xs text-zinc-700 dark:text-zinc-300"
+              >
+                <input
+                  id={inputId}
+                  type="checkbox"
+                  checked={checked}
+                  disabled={saving}
+                  onChange={(e) => void toggleLabel(lab.id, e.target.checked)}
+                  className="rounded border-zinc-400 dark:border-zinc-500"
+                />
+                <label htmlFor={inputId} className="inline-flex items-center gap-1">
+                  <span
+                    className="h-2 w-2 rounded-full"
+                    style={{ backgroundColor: lab.color ?? "#a1a1aa" }}
+                    aria-hidden
+                  />
+                  {lab.name}
+                </label>
+              </div>
+            );
+          })
+        )}
+      </fieldset>
       <div className="flex items-center gap-2 text-xs text-zinc-700 dark:text-zinc-300">
         <input
           id={archivedId}
@@ -233,11 +309,13 @@ function CardDetailPanel({
 function CardRow({
   card,
   listId,
+  boardLabels,
   includeArchived,
   onSaved,
 }: {
   card: CardDTO;
   listId: string;
+  boardLabels: LabelDTO[];
   /** When true, archived cards may appear and should show a clear badge. */
   includeArchived: boolean;
   onSaved: () => void;
@@ -386,8 +464,18 @@ function CardRow({
           >
             {card.title}
           </span>
-          {dueMeta || showArchivedBadge ? (
+          {dueMeta || showArchivedBadge || card.labels.length > 0 ? (
             <span className="mt-1 flex flex-wrap items-center gap-1">
+              {card.labels.map((lab) => (
+                <span
+                  key={lab.id}
+                  className="inline-flex max-w-full min-w-0 items-center rounded-full border border-zinc-300 bg-zinc-100 px-1.5 py-0.5 text-[10px] font-medium text-zinc-700 dark:border-zinc-600 dark:bg-zinc-800 dark:text-zinc-200"
+                  style={labelChipStyle(lab.color)}
+                  title={lab.name}
+                >
+                  <span className="truncate">{lab.name}</span>
+                </span>
+              ))}
               {dueMeta ? (
                 <span
                   className={dueChipClass(dueMeta.tone)}
@@ -421,6 +509,7 @@ function CardRow({
       {expanded ? (
         <CardDetailPanel
           card={card}
+          boardLabels={boardLabels}
           panelId={panelId}
           labelledById={panelLabelId}
           onSaved={onSaved}
@@ -504,9 +593,11 @@ function ColumnDropShell({
 
 function ListColumnBody({
   list,
+  boardLabels,
   includeArchived,
 }: {
   list: ListDTO;
+  boardLabels: LabelDTO[];
   includeArchived: boolean;
 }) {
   const router = useRouter();
@@ -574,6 +665,7 @@ function ListColumnBody({
                     key={c.id}
                     card={c}
                     listId={list.id}
+                    boardLabels={boardLabels}
                     includeArchived={includeArchived}
                     onSaved={() => router.refresh()}
                   />
@@ -931,7 +1023,11 @@ export function BoardListsView({
               onDragStart={() => setDndError(null)}
               onDragEnd={(e) => void onCardDragEnd(e)}
             >
-              <ListColumnBody list={list} includeArchived={includeArchived} />
+              <ListColumnBody
+                list={list}
+                boardLabels={board.labels}
+                includeArchived={includeArchived}
+              />
             </DndContext>
           </ColumnDropShell>
         ))}

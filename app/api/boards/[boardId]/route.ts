@@ -1,6 +1,10 @@
 import type { BoardVisibility } from "@prisma/client";
 import { NextResponse } from "next/server";
 
+import {
+  filterBoardLists,
+  parseBoardCardFilters,
+} from "@/lib/board-filters";
 import { jsonError, readJsonBody } from "@/lib/http";
 import { prisma } from "@/lib/prisma";
 import { toBoardDetailDTO, toBoardDTO } from "@/lib/serialize";
@@ -29,16 +33,33 @@ export async function GET(
   context: { params: Promise<{ boardId: string }> },
 ) {
   const { boardId } = await context.params;
+  const url = new URL(request.url);
   const includeArchived = includeArchivedFromRequest(request);
+  const filters = parseBoardCardFilters(url.searchParams);
+
+  if (filters.due && !["overdue", "today", "soon", "none"].includes(filters.due)) {
+    return jsonError(
+      "due must be one of: overdue, today, soon, none",
+      400,
+    );
+  }
+
   const board = await prisma.board.findUnique({
     where: { id: boardId },
     include: {
+      labels: { orderBy: { name: "asc" } },
       lists: {
         orderBy: { position: "asc" },
         include: {
           cards: {
             where: includeArchived ? undefined : { archived: false },
             orderBy: { position: "asc" },
+            include: {
+              labels: {
+                include: { label: true },
+                orderBy: { label: { name: "asc" } },
+              },
+            },
           },
         },
       },
@@ -47,7 +68,9 @@ export async function GET(
   if (!board) {
     return jsonError("Board not found", 404);
   }
-  return NextResponse.json(toBoardDetailDTO(board), {
+  const detail = toBoardDetailDTO(board);
+  detail.lists = filterBoardLists(detail.lists, filters);
+  return NextResponse.json(detail, {
     headers: { "Content-Type": "application/json" },
   });
 }

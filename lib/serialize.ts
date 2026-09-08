@@ -1,4 +1,11 @@
-import type { Board, BoardVisibility, Card, List, Workspace } from "@prisma/client";
+import type {
+  Board,
+  BoardVisibility,
+  Card,
+  Label,
+  List,
+  Workspace,
+} from "@prisma/client";
 
 /** Workspace summary for GET /api/workspaces and POST responses. */
 export type WorkspaceDTO = {
@@ -12,6 +19,14 @@ export type WorkspaceDetailDTO = WorkspaceDTO & {
   boards: BoardDTO[];
 };
 
+export type LabelDTO = {
+  id: string;
+  boardId: string;
+  name: string;
+  color: string | null;
+  createdAt: string;
+};
+
 export type CardDTO = {
   id: string;
   listId: string;
@@ -21,6 +36,7 @@ export type CardDTO = {
   archived: boolean;
   dueDate: string | null;
   createdAt: string;
+  labels: LabelDTO[];
 };
 
 export type ListDTO = {
@@ -41,7 +57,16 @@ export type BoardDTO = {
   createdAt: string;
 };
 
-export type BoardDetailDTO = BoardDTO & { lists: ListDTO[] };
+export type BoardDetailDTO = BoardDTO & {
+  lists: ListDTO[];
+  labels: LabelDTO[];
+};
+
+type LabelRow = Label;
+
+type CardWithLabels = Card & {
+  labels?: { label: LabelRow }[] | LabelRow[];
+};
 
 export function toWorkspaceDTO(w: Workspace): WorkspaceDTO {
   return {
@@ -60,7 +85,28 @@ export function toWorkspaceDetailDTO(
   };
 }
 
-export function toCardDTO(c: Card): CardDTO {
+export function toLabelDTO(l: LabelRow): LabelDTO {
+  return {
+    id: l.id,
+    boardId: l.boardId,
+    name: l.name,
+    color: l.color ?? null,
+    createdAt: l.createdAt.toISOString(),
+  };
+}
+
+function labelsFromCard(c: CardWithLabels): LabelDTO[] {
+  const raw = c.labels;
+  if (!raw || raw.length === 0) return [];
+  return raw.map((row) => {
+    if ("label" in row && row.label) {
+      return toLabelDTO(row.label);
+    }
+    return toLabelDTO(row as LabelRow);
+  });
+}
+
+export function toCardDTO(c: CardWithLabels): CardDTO {
   return {
     id: c.id,
     listId: c.listId,
@@ -70,10 +116,13 @@ export function toCardDTO(c: Card): CardDTO {
     archived: c.archived,
     dueDate: c.dueDate ? c.dueDate.toISOString() : null,
     createdAt: c.createdAt.toISOString(),
+    labels: labelsFromCard(c),
   };
 }
 
-export function toListDTO(l: List & { cards: Card[] }): ListDTO {
+export function toListDTO(
+  l: List & { cards: CardWithLabels[] },
+): ListDTO {
   return {
     id: l.id,
     boardId: l.boardId,
@@ -96,10 +145,14 @@ export function toBoardDTO(b: Board): BoardDTO {
 }
 
 export function toBoardDetailDTO(
-  b: Board & { lists: (List & { cards: Card[] })[] },
+  b: Board & {
+    lists: (List & { cards: CardWithLabels[] })[];
+    labels?: LabelRow[];
+  },
 ): BoardDetailDTO {
   return {
     ...toBoardDTO(b),
     lists: b.lists.map(toListDTO),
+    labels: (b.labels ?? []).map(toLabelDTO),
   };
 }

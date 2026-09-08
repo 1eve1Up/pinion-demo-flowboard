@@ -6,6 +6,8 @@ import {
   fetchWorkspaceFromApi,
 } from "@/lib/fetch-board-api";
 
+import { BoardFilters } from "./BoardFilters";
+import { BoardLabelsManager } from "./BoardLabelsManager";
 import { BoardListsGate } from "./BoardListsGate";
 import { BoardMetaEditor } from "./BoardMetaEditor";
 import { IncludeArchivedToggle } from "./IncludeArchivedToggle";
@@ -14,6 +16,11 @@ export const dynamic = "force-dynamic";
 
 type Params = Promise<{ boardId: string }>;
 type SearchParams = Promise<Record<string, string | string[] | undefined>>;
+
+function firstParam(raw: string | string[] | undefined): string | undefined {
+  if (raw == null) return undefined;
+  return (Array.isArray(raw) ? raw[0] : raw).trim() || undefined;
+}
 
 function parseIncludeArchived(
   raw: string | string[] | undefined,
@@ -33,7 +40,16 @@ export default async function BoardDetailPage({
   const { boardId } = await params;
   const sp = await searchParams;
   const includeArchived = parseIncludeArchived(sp.includeArchived);
-  const board = await fetchBoardDetailFromApi(boardId, { includeArchived });
+  const label = firstParam(sp.label) ?? "";
+  const due = firstParam(sp.due) ?? "";
+  const keyword = firstParam(sp.keyword) ?? "";
+
+  const board = await fetchBoardDetailFromApi(boardId, {
+    includeArchived,
+    label: label || null,
+    due: due || null,
+    keyword: keyword || null,
+  });
 
   if (!board) {
     notFound();
@@ -44,6 +60,9 @@ export default async function BoardDetailPage({
     ? `/boards?workspaceId=${encodeURIComponent(board.workspaceId)}`
     : "/boards";
   const workspaceLabel = workspace?.name ?? "Boards";
+
+  const totalCards = board.lists.reduce((n, l) => n + l.cards.length, 0);
+  const filtersActive = Boolean(label || due || keyword);
 
   return (
     <div className="min-h-screen bg-background px-4 py-10 text-foreground">
@@ -122,10 +141,31 @@ export default async function BoardDetailPage({
             initialDescription={board.description}
             initialVisibility={board.visibility}
           />
+          <BoardLabelsManager
+            boardId={board.id}
+            initialLabels={board.labels}
+          />
+          <BoardFilters
+            boardId={board.id}
+            labels={board.labels}
+            includeArchived={includeArchived}
+            initialLabel={label}
+            initialDue={due}
+            initialKeyword={keyword}
+          />
           <IncludeArchivedToggle
             boardId={board.id}
             includeArchived={includeArchived}
+            label={label || undefined}
+            due={due || undefined}
+            keyword={keyword || undefined}
           />
+          {filtersActive && totalCards === 0 ? (
+            <p className="mt-3 text-sm text-amber-800 dark:text-amber-200" role="status">
+              No cards match the current filters. Clear filters to see the full
+              board.
+            </p>
+          ) : null}
           <p className="mt-4 text-sm text-pretty text-muted-foreground">
             Lists load from the API (ordered by{" "}
             <code className="rounded bg-muted/80 px-1 py-0.5 font-mono text-xs text-foreground">

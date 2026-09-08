@@ -5,8 +5,20 @@ import {
   DELETE as deleteBoard,
   PATCH as patchBoard,
 } from "@/app/api/boards/[boardId]/route";
+import {
+  DELETE as deleteLabel,
+  PATCH as patchLabel,
+} from "@/app/api/boards/[boardId]/labels/[labelId]/route";
+import {
+  GET as listLabels,
+  POST as createLabel,
+} from "@/app/api/boards/[boardId]/labels/route";
 import { POST as reorderBoardLists } from "@/app/api/boards/[boardId]/lists/reorder/route";
 import { GET as listBoards, POST as createBoard } from "@/app/api/boards/route";
+import {
+  DELETE as detachCardLabel,
+  PUT as attachCardLabel,
+} from "@/app/api/cards/[cardId]/labels/[labelId]/route";
 import { PATCH as patchCard } from "@/app/api/cards/[cardId]/route";
 import { POST as createCardRoot } from "@/app/api/cards/route";
 import { PATCH as patchList, DELETE as deleteList } from "@/app/api/lists/[listId]/route";
@@ -24,6 +36,8 @@ async function readJson<T>(res: Response): Promise<T> {
 }
 
 beforeEach(async () => {
+  await prisma.cardLabel.deleteMany();
+  await prisma.label.deleteMany();
   await prisma.card.deleteMany();
   await prisma.list.deleteMany();
   await prisma.board.deleteMany();
@@ -825,5 +839,397 @@ describe("Sprint path regression (PIN-008)", () => {
 
     const row = await prisma.card.findUnique({ where: { id: card.id } });
     expect(row?.listId).toBe(homeList.id);
+  });
+
+  it("labels: CRUD on /api/boards/[boardId]/labels", async () => {
+    const board = await readJson<{ id: string }>(
+      await createBoard(
+        new Request("http://localhost/api/boards", {
+          method: "POST",
+          headers: { "Content-Type": "application/json" },
+          body: JSON.stringify({ title: "Labeled" }),
+        }),
+      ),
+    );
+
+    const missingBoard = await listLabels(
+      new Request("http://localhost"),
+      { params: Promise.resolve({ boardId: "missing" }) },
+    );
+    expect(missingBoard.status).toBe(404);
+
+    const created = await createLabel(
+      new Request("http://localhost/api/boards/x/labels", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ name: "  Bug  ", color: "#ef4444" }),
+      }),
+      { params: Promise.resolve({ boardId: board.id }) },
+    );
+    expect(created.status).toBe(201);
+    const label = await readJson<{
+      id: string;
+      name: string;
+      color: string | null;
+      boardId: string;
+    }>(created);
+    expect(label.name).toBe("Bug");
+    expect(label.color).toBe("#ef4444");
+    expect(label.boardId).toBe(board.id);
+
+    const dup = await createLabel(
+      new Request("http://localhost/api/boards/x/labels", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ name: "Bug" }),
+      }),
+      { params: Promise.resolve({ boardId: board.id }) },
+    );
+    expect(dup.status).toBe(409);
+
+    const listed = await readJson<{ labels: { id: string }[] }>(
+      await listLabels(new Request("http://localhost"), {
+        params: Promise.resolve({ boardId: board.id }),
+      }),
+    );
+    expect(listed.labels).toHaveLength(1);
+
+    const patched = await patchLabel(
+      new Request("http://localhost/api/boards/x/labels/y", {
+        method: "PATCH",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ name: "Feature", color: null }),
+      }),
+      { params: Promise.resolve({ boardId: board.id, labelId: label.id }) },
+    );
+    expect(patched.status).toBe(200);
+    const pBody = await readJson<{ name: string; color: string | null }>(patched);
+    expect(pBody.name).toBe("Feature");
+    expect(pBody.color).toBeNull();
+
+    const deleted = await deleteLabel(new Request("http://localhost"), {
+      params: Promise.resolve({ boardId: board.id, labelId: label.id }),
+    });
+    expect(deleted.status).toBe(204);
+    expect(
+      (
+        await readJson<{ labels: unknown[] }>(
+          await listLabels(new Request("http://localhost"), {
+            params: Promise.resolve({ boardId: board.id }),
+          }),
+        )
+      ).labels,
+    ).toEqual([]);
+  });
+
+  it("labels: attach/detach on cards; reject cross-board label", async () => {
+    const boardA = await readJson<{ id: string }>(
+      await createBoard(
+        new Request("http://localhost/api/boards", {
+          method: "POST",
+          headers: { "Content-Type": "application/json" },
+          body: JSON.stringify({ title: "A" }),
+        }),
+      ),
+    );
+    const boardB = await readJson<{ id: string }>(
+      await createBoard(
+        new Request("http://localhost/api/boards", {
+          method: "POST",
+          headers: { "Content-Type": "application/json" },
+          body: JSON.stringify({ title: "B" }),
+        }),
+      ),
+    );
+    const listA = await readJson<{ id: string }>(
+      await createList(
+        new Request("http://localhost/api/lists", {
+          method: "POST",
+          headers: { "Content-Type": "application/json" },
+          body: JSON.stringify({ boardId: boardA.id, title: "Todo" }),
+        }),
+      ),
+    );
+    const card = await readJson<{ id: string }>(
+      await createCardRoot(
+        new Request("http://localhost/api/cards", {
+          method: "POST",
+          headers: { "Content-Type": "application/json" },
+          body: JSON.stringify({ listId: listA.id, title: "Task" }),
+        }),
+      ),
+    );
+    const labelA = await readJson<{ id: string }>(
+      await createLabel(
+        new Request("http://localhost/api/boards/x/labels", {
+          method: "POST",
+          headers: { "Content-Type": "application/json" },
+          body: JSON.stringify({ name: "Bug" }),
+        }),
+        { params: Promise.resolve({ boardId: boardA.id }) },
+      ),
+    );
+    const labelB = await readJson<{ id: string }>(
+      await createLabel(
+        new Request("http://localhost/api/boards/x/labels", {
+          method: "POST",
+          headers: { "Content-Type": "application/json" },
+          body: JSON.stringify({ name: "Other" }),
+        }),
+        { params: Promise.resolve({ boardId: boardB.id }) },
+      ),
+    );
+
+    const attached = await attachCardLabel(new Request("http://localhost"), {
+      params: Promise.resolve({ cardId: card.id, labelId: labelA.id }),
+    });
+    expect(attached.status).toBe(200);
+    const aBody = await readJson<{ labels: { id: string; name: string }[] }>(
+      attached,
+    );
+    expect(aBody.labels.map((l) => l.id)).toEqual([labelA.id]);
+
+    const boardDetail = await readJson<{
+      labels: { id: string }[];
+      lists: { cards: { labels: { id: string }[] }[] }[];
+    }>(
+      await getBoard(new Request("http://localhost"), {
+        params: Promise.resolve({ boardId: boardA.id }),
+      }),
+    );
+    expect(boardDetail.labels.map((l) => l.id)).toContain(labelA.id);
+    expect(boardDetail.lists[0].cards[0].labels.map((l) => l.id)).toEqual([
+      labelA.id,
+    ]);
+
+    const cross = await attachCardLabel(new Request("http://localhost"), {
+      params: Promise.resolve({ cardId: card.id, labelId: labelB.id }),
+    });
+    expect(cross.status).toBe(400);
+
+    const detached = await detachCardLabel(new Request("http://localhost"), {
+      params: Promise.resolve({ cardId: card.id, labelId: labelA.id }),
+    });
+    expect(detached.status).toBe(200);
+    expect(
+      (await readJson<{ labels: unknown[] }>(detached)).labels,
+    ).toEqual([]);
+  });
+
+  it("GET board filters by label, keyword, due=none; compose with includeArchived", async () => {
+    const board = await readJson<{ id: string }>(
+      await createBoard(
+        new Request("http://localhost/api/boards", {
+          method: "POST",
+          headers: { "Content-Type": "application/json" },
+          body: JSON.stringify({ title: "Filter me" }),
+        }),
+      ),
+    );
+    const list = await readJson<{ id: string }>(
+      await createList(
+        new Request("http://localhost/api/lists", {
+          method: "POST",
+          headers: { "Content-Type": "application/json" },
+          body: JSON.stringify({ boardId: board.id, title: "Todo" }),
+        }),
+      ),
+    );
+    const label = await readJson<{ id: string }>(
+      await createLabel(
+        new Request("http://localhost/api/boards/x/labels", {
+          method: "POST",
+          headers: { "Content-Type": "application/json" },
+          body: JSON.stringify({ name: "Bug" }),
+        }),
+        { params: Promise.resolve({ boardId: board.id }) },
+      ),
+    );
+    const bugCard = await readJson<{ id: string }>(
+      await createCardRoot(
+        new Request("http://localhost/api/cards", {
+          method: "POST",
+          headers: { "Content-Type": "application/json" },
+          body: JSON.stringify({
+            listId: list.id,
+            title: "Crash on save",
+            description: "null ptr",
+          }),
+        }),
+      ),
+    );
+    const other = await readJson<{ id: string }>(
+      await createCardRoot(
+        new Request("http://localhost/api/cards", {
+          method: "POST",
+          headers: { "Content-Type": "application/json" },
+          body: JSON.stringify({ listId: list.id, title: "Docs" }),
+        }),
+      ),
+    );
+    await attachCardLabel(new Request("http://localhost"), {
+      params: Promise.resolve({ cardId: bugCard.id, labelId: label.id }),
+    });
+    await patchCard(
+      new Request("http://localhost/api/cards/x", {
+        method: "PATCH",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ archived: true }),
+      }),
+      { params: Promise.resolve({ cardId: other.id }) },
+    );
+
+    const byLabel = await readJson<{
+      lists: { cards: { id: string }[] }[];
+    }>(
+      await getBoard(
+        new Request(
+          `http://localhost/api/boards/x?label=${encodeURIComponent(label.id)}`,
+        ),
+        { params: Promise.resolve({ boardId: board.id }) },
+      ),
+    );
+    expect(byLabel.lists[0].cards.map((c) => c.id)).toEqual([bugCard.id]);
+
+    const byName = await readJson<{ lists: { cards: { id: string }[] }[] }>(
+      await getBoard(
+        new Request("http://localhost/api/boards/x?label=bug"),
+        { params: Promise.resolve({ boardId: board.id }) },
+      ),
+    );
+    expect(byName.lists[0].cards.map((c) => c.id)).toEqual([bugCard.id]);
+
+    const byKeyword = await readJson<{ lists: { cards: { id: string }[] }[] }>(
+      await getBoard(
+        new Request("http://localhost/api/boards/x?keyword=null%20ptr"),
+        { params: Promise.resolve({ boardId: board.id }) },
+      ),
+    );
+    expect(byKeyword.lists[0].cards.map((c) => c.id)).toEqual([bugCard.id]);
+
+    const dueNone = await readJson<{ lists: { cards: { id: string }[] }[] }>(
+      await getBoard(
+        new Request("http://localhost/api/boards/x?due=none"),
+        { params: Promise.resolve({ boardId: board.id }) },
+      ),
+    );
+    expect(dueNone.lists[0].cards.map((c) => c.id)).toEqual([bugCard.id]);
+
+    const badDue = await getBoard(
+      new Request("http://localhost/api/boards/x?due=whenever"),
+      { params: Promise.resolve({ boardId: board.id }) },
+    );
+    expect(badDue.status).toBe(400);
+
+    const archivedHidden = await readJson<{
+      lists: { cards: { id: string }[] }[];
+    }>(
+      await getBoard(
+        new Request("http://localhost/api/boards/x?keyword=Docs"),
+        { params: Promise.resolve({ boardId: board.id }) },
+      ),
+    );
+    expect(archivedHidden.lists[0].cards).toEqual([]);
+
+    const withArchived = await readJson<{
+      lists: { cards: { id: string }[] }[];
+    }>(
+      await getBoard(
+        new Request(
+          "http://localhost/api/boards/x?keyword=Docs&includeArchived=true",
+        ),
+        { params: Promise.resolve({ boardId: board.id }) },
+      ),
+    );
+    expect(withArchived.lists[0].cards.map((c) => c.id)).toEqual([other.id]);
+
+    const noMatch = await readJson<{ lists: { cards: unknown[] }[] }>(
+      await getBoard(
+        new Request("http://localhost/api/boards/x?label=nonexistent"),
+        { params: Promise.resolve({ boardId: board.id }) },
+      ),
+    );
+    expect(noMatch.lists[0].cards).toEqual([]);
+  });
+
+  it("GET board due=overdue and due=today filter by cardDueMeta tones", async () => {
+    const board = await readJson<{ id: string }>(
+      await createBoard(
+        new Request("http://localhost/api/boards", {
+          method: "POST",
+          headers: { "Content-Type": "application/json" },
+          body: JSON.stringify({ title: "Due filter" }),
+        }),
+      ),
+    );
+    const list = await readJson<{ id: string }>(
+      await createList(
+        new Request("http://localhost/api/lists", {
+          method: "POST",
+          headers: { "Content-Type": "application/json" },
+          body: JSON.stringify({ boardId: board.id, title: "Todo" }),
+        }),
+      ),
+    );
+
+    const startOfToday = new Date();
+    startOfToday.setHours(12, 0, 0, 0);
+    const yesterday = new Date(startOfToday);
+    yesterday.setDate(yesterday.getDate() - 1);
+
+    const overdueCard = await readJson<{ id: string }>(
+      await createCardRoot(
+        new Request("http://localhost/api/cards", {
+          method: "POST",
+          headers: { "Content-Type": "application/json" },
+          body: JSON.stringify({ listId: list.id, title: "Late" }),
+        }),
+      ),
+    );
+    const todayCard = await readJson<{ id: string }>(
+      await createCardRoot(
+        new Request("http://localhost/api/cards", {
+          method: "POST",
+          headers: { "Content-Type": "application/json" },
+          body: JSON.stringify({ listId: list.id, title: "Today task" }),
+        }),
+      ),
+    );
+    await patchCard(
+      new Request("http://localhost/api/cards/x", {
+        method: "PATCH",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ dueDate: yesterday.toISOString() }),
+      }),
+      { params: Promise.resolve({ cardId: overdueCard.id }) },
+    );
+    await patchCard(
+      new Request("http://localhost/api/cards/x", {
+        method: "PATCH",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ dueDate: startOfToday.toISOString() }),
+      }),
+      { params: Promise.resolve({ cardId: todayCard.id }) },
+    );
+
+    const overdueOnly = await readJson<{
+      lists: { cards: { id: string }[] }[];
+    }>(
+      await getBoard(
+        new Request("http://localhost/api/boards/x?due=overdue"),
+        { params: Promise.resolve({ boardId: board.id }) },
+      ),
+    );
+    expect(overdueOnly.lists[0].cards.map((c) => c.id)).toEqual([
+      overdueCard.id,
+    ]);
+
+    const todayOnly = await readJson<{ lists: { cards: { id: string }[] }[] }>(
+      await getBoard(
+        new Request("http://localhost/api/boards/x?due=today"),
+        { params: Promise.resolve({ boardId: board.id }) },
+      ),
+    );
+    expect(todayOnly.lists[0].cards.map((c) => c.id)).toEqual([todayCard.id]);
   });
 });

@@ -1,6 +1,6 @@
 # FlowBoard
 
-FlowBoard is a **demo through sprint-4**: kanban **workspaces** (structural), **boards**, **lists**, and **cards** with drag-and-drop (reorder cards inside a column, move cards between lists, reorder columns on the board), backed by **Prisma** + **SQLite** and a **Next.js** (App Router) UI and REST API. Sprint-4 focused on **UI polish** (typography, navigation context, due-date chips on cards, visible DnD error feedback, card-details keyboard/accessibility, loading skeleton for the board canvas); **auth, realtime, and Postgres are still out of scope** (see below and **[AGENTS.md](AGENTS.md)** for the client-only DnD boundary).
+FlowBoard is a **demo through sprint-5**: kanban **workspaces** (structural), **boards**, **lists**, and **cards** with drag-and-drop (reorder cards inside a column, move cards between lists, reorder columns on the board), backed by **Prisma** + **SQLite** and a **Next.js** (App Router) UI and REST API. Sprint-5 adds **board-scoped labels**, **card↔label assignment**, and **board filters** (`label` / `due` / `keyword` query params plus UI). **Auth, realtime, and Postgres are still out of scope** (see below and **[AGENTS.md](AGENTS.md)** for the client-only DnD boundary).
 
 ## Repository layout
 
@@ -20,13 +20,19 @@ This release is still **single-user** and **local-first**. **Workspaces are stru
 - **Card order inside a column** — **`POST /api/lists/[listId]/cards/reorder`** with `{ "cardIds": [ … ] }` (full permutation, dense positions). The UI uses **`@dnd-kit/sortable`** (grip **`⋮⋮`** on each card) inside the same client-only board gate as other DnD (see **[AGENTS.md](AGENTS.md)**).
 - **Cross-list card moves** — Still **`PATCH /api/cards/[cardId]`** with `listId` + `position` when dropping onto another column.
 
+**Shipped in sprint-5 (labels + filters):**
+
+- **Labels** — Board-scoped `Label` rows (`name`, optional `color`) with a `CardLabel` join. REST: **`GET`/`POST` `/api/boards/[boardId]/labels`**, **`PATCH`/`DELETE` `/api/boards/[boardId]/labels/[labelId]`**, **`PUT`/`DELETE` `/api/cards/[cardId]/labels/[labelId]`** (attach/detach; cross-board label → **400**).
+- **Board GET filters** — **`GET /api/boards/[boardId]`** accepts **`label`** (id or case-insensitive name), **`due`** (`overdue` | `today` | `soon` | `none`), **`keyword`** (substring on title/description), composed with **`includeArchived`**. Keyword is simple string match only (no search engine).
+- **UI** — Label chips on cards; board **Labels** manager; card **Details** assign toggles; **Filter** controls sync to the board URL query string.
+
 **Still not shipped (do not assume from this README):**
 
 - **No authentication** — no OAuth, email/password, sessions, or per-user isolation. Anyone who can reach the app uses the same SQLite database.
 - **No invites, roles, or workspace permissions** — the visibility field is stored for API/PRD alignment; it is **not** enforced for multiple users.
 - **No realtime collaboration** — no websockets, presence, or coordinated concurrent edits.
 
-**Deferred beyond sprint-3:** production auth, team/workspace membership, realtime updates, PostgreSQL as the default demo database, comments/labels/attachments at PRD scale, and other PRD items not listed above.
+**Deferred beyond sprint-5:** production auth, team/workspace membership, realtime updates, PostgreSQL as the default demo database, comments/attachments/notifications/assignees at PRD scale, and other PRD items not listed above.
 
 ## Quick start (new contributors)
 
@@ -43,7 +49,7 @@ npm test
 npm run build
 ```
 
-`npm test` runs migrations against `prisma/test-integration.db` (see `pretest` in `package.json`) and executes Vitest API tests. Test cleanup deletes in FK order: **cards → lists → boards → workspaces**. `npm run build` runs `prisma generate` and `next build`.
+`npm test` runs migrations against `prisma/test-integration.db` (see `pretest` in `package.json`) and executes Vitest API tests. Test cleanup deletes in FK order: **cardLabel → label → cards → lists → boards → workspaces**. `npm run build` runs `prisma generate` and `next build`.
 
 ### Run the app locally
 
@@ -70,7 +76,7 @@ npm run db:migrate:dev   # prisma migrate dev — when changing the schema
 npm run db:smoke         # migrate + insert sample board/list/card (PIN-002 smoke)
 ```
 
-Schema: **Workspace** → **Board** → **List** → **Card**, with **`position`** on lists and cards for ordering. Boards have **`description`** and **`visibility`**; cards have **`archived`** and optional **`dueDate`**.
+Schema: **Workspace** → **Board** → **List** → **Card**, with **`position`** on lists and cards for ordering. Boards have **`description`** and **`visibility`**; cards have **`archived`** and optional **`dueDate`**. Boards also own **`Label`** rows; cards link via **`CardLabel`**.
 
 ## REST API (JSON)
 
@@ -83,9 +89,13 @@ Base path: **`/api`**. Errors use **`{ "error": "..." }`** with **4xx** where ap
 | `GET` | `/api/workspaces/[workspaceId]` | Workspace plus `boards` as board summaries (no nested lists) |
 | `GET` | `/api/boards` | Optional query **`workspaceId`** — filter boards; omit to return all |
 | `POST` | `/api/boards` | Body `{ "title", "workspaceId"? }` — unknown workspace **404** |
-| `GET` | `/api/boards/[boardId]` | Nested lists → cards by `position`; optional **`includeArchived`** |
+| `GET` | `/api/boards/[boardId]` | Nested lists → cards by `position`; optional **`includeArchived`**, **`label`**, **`due`**, **`keyword`**; response includes board **`labels`** and per-card **`labels`** |
 | `PATCH` | `/api/boards/[boardId]` | Body `{ "title"?, "description"?, "visibility"? }` |
-| `DELETE` | `/api/boards/[boardId]` | Cascades lists and cards |
+| `DELETE` | `/api/boards/[boardId]` | Cascades lists, cards, and labels |
+| `GET` | `/api/boards/[boardId]/labels` | `{ "labels": [ … ] }` |
+| `POST` | `/api/boards/[boardId]/labels` | Body `{ "name", "color"? }` — unique name per board |
+| `PATCH` | `/api/boards/[boardId]/labels/[labelId]` | Body `{ "name"?, "color"? }` |
+| `DELETE` | `/api/boards/[boardId]/labels/[labelId]` | Cascades card assignments |
 | `POST` | `/api/boards/[boardId]/lists/reorder` | Body `{ "listIds": string[] }` — every list on the board, exactly once |
 | `POST` | `/api/lists/[listId]/cards/reorder` | Body `{ "cardIds": string[] }` — every card in the list, exactly once |
 | `POST` | `/api/lists` | Body `{ "boardId", "title", "position"? }` |
@@ -93,9 +103,11 @@ Base path: **`/api`**. Errors use **`{ "error": "..." }`** with **4xx** where ap
 | `DELETE` | `/api/lists/[listId]` | |
 | `POST` | `/api/cards` | Body `{ "listId", "title", "description"?, "position"? }` |
 | `PATCH` | `/api/cards/[cardId]` | Body `{ "title"?, "description"?, "listId"?, "position"?, "archived"?, "dueDate"? }` — `dueDate` ISO string or **`null`** to clear; `listId` only within the **same board** |
+| `PUT` | `/api/cards/[cardId]/labels/[labelId]` | Attach label (idempotent); label must belong to the card's board |
+| `DELETE` | `/api/cards/[cardId]/labels/[labelId]` | Detach label |
 | `DELETE` | `/api/cards/[cardId]` | |
 
-Run **`npm test`** for automated API coverage (workspaces, scoped boards, board PATCH, cards archive/due date, list and **in-list card** reorder, and sprint-path regression).
+Run **`npm test`** for automated API coverage (workspaces, scoped boards, board PATCH, cards archive/due date, labels CRUD/assign, board filters, list and **in-list card** reorder, and sprint-path regression).
 
 ## Learn more
 
@@ -110,7 +122,7 @@ Deploy like any Next.js app (e.g. [Vercel](https://vercel.com/)); set **`DATABAS
 
 This demo repo is being built by [Level Up](https://levelupla.io)'s Pinion.
 
-- Demo sprints: Four (and counting)
+- Demo sprints: Five (and counting)
 - Human code contributions to date: Zero
 
 ### About Pinion

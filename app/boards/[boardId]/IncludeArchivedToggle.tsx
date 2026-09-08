@@ -2,12 +2,33 @@
 
 import { usePathname, useRouter } from "next/navigation";
 
+function buildBoardQuery(opts: {
+  includeArchived: boolean;
+  label?: string;
+  due?: string;
+  keyword?: string;
+}): string {
+  const q = new URLSearchParams();
+  if (opts.includeArchived) q.set("includeArchived", "true");
+  if (opts.label) q.set("label", opts.label);
+  if (opts.due) q.set("due", opts.due);
+  if (opts.keyword) q.set("keyword", opts.keyword);
+  const s = q.toString();
+  return s ? `?${s}` : "";
+}
+
 export function IncludeArchivedToggle({
   boardId,
   includeArchived,
+  label,
+  due,
+  keyword,
 }: {
   boardId: string;
   includeArchived: boolean;
+  label?: string;
+  due?: string;
+  keyword?: string;
 }) {
   const router = useRouter();
   const pathname = usePathname();
@@ -15,7 +36,14 @@ export function IncludeArchivedToggle({
 
   function onChange() {
     const next = !includeArchived;
-    const url = next ? `${pathname}?includeArchived=true` : pathname;
+    const url =
+      pathname +
+      buildBoardQuery({
+        includeArchived: next,
+        label,
+        due,
+        keyword,
+      });
     router.replace(url);
     router.refresh();
   }

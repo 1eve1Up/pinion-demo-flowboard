@@ -5,6 +5,9 @@ import type { BoardDetailDTO, WorkspaceDetailDTO } from "@/lib/serialize";
 export type FetchBoardDetailOptions = {
   /** When true, request `?includeArchived=true` so archived cards appear in each list. */
   includeArchived?: boolean;
+  label?: string | null;
+  due?: string | null;
+  keyword?: string | null;
 };
 
 /**
@@ -20,9 +23,13 @@ export async function fetchBoardDetailFromApi(
   const proto =
     h.get("x-forwarded-proto") ??
     (process.env.NODE_ENV === "development" ? "http" : "https");
-  const q =
-    options?.includeArchived === true ? "?includeArchived=true" : "";
-  const url = `${proto}://${host}/api/boards/${boardId}${q}`;
+  const q = new URLSearchParams();
+  if (options?.includeArchived === true) q.set("includeArchived", "true");
+  if (options?.label) q.set("label", options.label);
+  if (options?.due) q.set("due", options.due);
+  if (options?.keyword) q.set("keyword", options.keyword);
+  const qs = q.toString();
+  const url = `${proto}://${host}/api/boards/${boardId}${qs ? `?${qs}` : ""}`;
 
   const res = await fetch(url, { cache: "no-store" });
   if (res.status === 404) {

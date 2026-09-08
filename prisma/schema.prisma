@@ -31,6 +31,7 @@ model Board {
   workspaceId String
   workspace   Workspace       @relation(fields: [workspaceId], references: [id], onDelete: Restrict, onUpdate: Cascade)
   lists       List[]
+  labels      Label[]
 
   @@index([workspaceId])
 }
@@ -57,6 +58,32 @@ model Card {
   archived    Boolean   @default(false)
   dueDate     DateTime?
   createdAt   DateTime  @default(now())
+  labels      CardLabel[]
 
   @@index([listId])
+}
+
+/** Board-scoped categorization tag (no auth / no User). */
+model Label {
+  id        String   @id @default(cuid())
+  boardId   String
+  board     Board    @relation(fields: [boardId], references: [id], onDelete: Cascade)
+  name      String
+  color     String?
+  createdAt DateTime @default(now())
+  cards     CardLabel[]
+
+  @@unique([boardId, name])
+  @@index([boardId])
+}
+
+/** Many-to-many join: card ↔ label (label must belong to the card's board). */
+model CardLabel {
+  cardId  String
+  labelId String
+  card    Card  @relation(fields: [cardId], references: [id], onDelete: Cascade)
+  label   Label @relation(fields: [labelId], references: [id], onDelete: Cascade)
+
+  @@id([cardId, labelId])
+  @@index([labelId])
 }

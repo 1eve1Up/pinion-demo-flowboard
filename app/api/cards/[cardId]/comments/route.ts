@@ -2,12 +2,20 @@ import { NextResponse } from "next/server";
 
 import { jsonError, readJsonBody } from "@/lib/http";
 import { prisma } from "@/lib/prisma";
+import {
+  quoteCardTitle,
+  recordActivity,
+  truncateForSummary,
+} from "@/lib/record-activity";
 import { toCommentDTO, toCommentDTOs } from "@/lib/serialize";
 
 export const dynamic = "force-dynamic";
 
 async function findCard(cardId: string) {
-  return prisma.card.findUnique({ where: { id: cardId } });
+  return prisma.card.findUnique({
+    where: { id: cardId },
+    include: { list: { select: { boardId: true } } },
+  });
 }
 
 export async function GET(
@@ -60,6 +68,13 @@ export async function POST(
 
   const comment = await prisma.comment.create({
     data: { cardId, text, author },
+  });
+  await recordActivity({
+    boardId: card.list.boardId,
+    type: "comment.created",
+    summary: `Comment on ${quoteCardTitle(card.title)}: ${truncateForSummary(text)}`,
+    actor: author,
+    cardId,
   });
   return NextResponse.json(toCommentDTO(comment), {
     status: 201,

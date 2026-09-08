@@ -6,6 +6,7 @@ import {
   fetchWorkspaceFromApi,
 } from "@/lib/fetch-board-api";
 
+import { BoardActivityPanel } from "./BoardActivityPanel";
 import { BoardFilters } from "./BoardFilters";
 import { BoardLabelsManager } from "./BoardLabelsManager";
 import { BoardListsGate } from "./BoardListsGate";
@@ -153,6 +154,7 @@ export default async function BoardDetailPage({
             initialDue={due}
             initialKeyword={keyword}
           />
+          <BoardActivityPanel boardId={board.id} />
           <IncludeArchivedToggle
             boardId={board.id}
             includeArchived={includeArchived}

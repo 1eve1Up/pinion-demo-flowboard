@@ -1,4 +1,5 @@
 import type {
+  ActivityEntry,
   Board,
   BoardVisibility,
   Card,
@@ -33,6 +34,17 @@ export type CommentDTO = {
   cardId: string;
   text: string;
   author: string | null;
+  createdAt: string;
+};
+
+export type ActivityEntryDTO = {
+  id: string;
+  boardId: string;
+  type: string;
+  summary: string;
+  actor: string | null;
+  cardId: string | null;
+  metadata: string | null;
   createdAt: string;
 };
 
@@ -119,6 +131,26 @@ export function toCommentDTOs(comments: Comment[]): CommentDTO[] {
     .slice()
     .sort((a, b) => a.createdAt.getTime() - b.createdAt.getTime())
     .map(toCommentDTO);
+}
+
+export function toActivityEntryDTO(e: ActivityEntry): ActivityEntryDTO {
+  return {
+    id: e.id,
+    boardId: e.boardId,
+    type: e.type,
+    summary: e.summary,
+    actor: e.actor ?? null,
+    cardId: e.cardId ?? null,
+    metadata: e.metadata ?? null,
+    createdAt: e.createdAt.toISOString(),
+  };
+}
+
+export function toActivityEntryDTOs(entries: ActivityEntry[]): ActivityEntryDTO[] {
+  return entries
+    .slice()
+    .sort((a, b) => b.createdAt.getTime() - a.createdAt.getTime())
+    .map(toActivityEntryDTO);
 }
 
 function labelsFromCard(c: CardWithLabels): LabelDTO[] {

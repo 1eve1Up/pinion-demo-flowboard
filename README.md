@@ -1,6 +1,6 @@
 # FlowBoard
 
-FlowBoard is a **demo through sprint-6**: kanban **workspaces** (structural), **boards**, **lists**, and **cards** with drag-and-drop (reorder cards inside a column, move cards between lists, reorder columns on the board), backed by **Prisma** + **SQLite** and a **Next.js** (App Router) UI and REST API. Sprint-5 adds **board-scoped labels**, **card↔label assignment**, and **board filters** (`label` / `due` / `keyword` query params plus UI). Sprint-6 adds **append-only card comments** (optional `author` string, no login). **Auth, realtime, and Postgres are still out of scope** (see below and **[AGENTS.md](AGENTS.md)** for the client-only DnD boundary).
+FlowBoard is a **demo through sprint-7**: kanban **workspaces** (structural), **boards**, **lists**, and **cards** with drag-and-drop (reorder cards inside a column, move cards between lists, reorder columns on the board), backed by **Prisma** + **SQLite** and a **Next.js** (App Router) UI and REST API. Sprint-5 adds **board-scoped labels**, **card↔label assignment**, and **board filters** (`label` / `due` / `keyword` query params plus UI). Sprint-6 adds **append-only card comments** (optional `author` string, no login). Sprint-7 adds a **board activity log** (typed events, optional `actor`, fetch on expand). **Auth, realtime, and Postgres are still out of scope** (see below and **[AGENTS.md](AGENTS.md)** for the client-only DnD boundary).
 
 ## Repository layout
 
@@ -31,13 +31,19 @@ This release is still **single-user** and **local-first**. **Workspaces are stru
 - **Comments** — Append-only `Comment` rows on cards (`text`, optional `author`, no `User`). REST: **`GET`/`POST` `/api/cards/[cardId]/comments`**, **`DELETE` `/api/cards/[cardId]/comments/[commentId]`** (demo cleanup). **`GET /api/boards/[boardId]`** does **not** nest comment threads on cards by default.
 - **UI** — Card **Details** loads comments on open; list (oldest first) + compose form (text + optional author).
 
+**Shipped in sprint-7 (activity log):**
+
+- **Activity** — Append-only `ActivityEntry` rows on boards (`type`, `summary`, optional `actor` / `cardId`, no `User`). REST: **`GET /api/boards/[boardId]/activity`** with **`limit`** and optional **`cursor`** pagination (newest first). **`GET /api/boards/[boardId]`** does **not** nest activity on board reads.
+- **Write path** — High-signal mutations emit entries: **`card.created`**, **`card.updated`**, **`card.moved`**, **`label.attached`**, **`label.detached`**, **`comment.created`** (recording failures do not break mutations).
+- **UI** — Collapsible **Activity** panel on the board page; fetches activity on expand.
+
 **Still not shipped (do not assume from this README):**
 
 - **No authentication** — no OAuth, email/password, sessions, or per-user isolation. Anyone who can reach the app uses the same SQLite database.
 - **No invites, roles, or workspace permissions** — the visibility field is stored for API/PRD alignment; it is **not** enforced for multiple users.
 - **No realtime collaboration** — no websockets, presence, or coordinated concurrent edits.
 
-**Deferred beyond sprint-6:** production auth, team/workspace membership, realtime updates, PostgreSQL as the default demo database, board activity/audit log, attachments/notifications/assignees at PRD scale, comment mentions/editing/threading, and other PRD items not listed above.
+**Deferred beyond sprint-7:** production auth, team/workspace membership, realtime updates, PostgreSQL as the default demo database, activity edit/delete and PRD-scale audit search, attachments/notifications/assignees at PRD scale, comment mentions/editing/threading, and other PRD items not listed above.
 
 ## Quick start (new contributors)
 
@@ -54,7 +60,7 @@ npm test
 npm run build
 ```
 
-`npm test` runs migrations against `prisma/test-integration.db` (see `pretest` in `package.json`) and executes Vitest API tests. Test cleanup deletes in FK order: **comment → cardLabel → label → cards → lists → boards → workspaces**. `npm run build` runs `prisma generate` and `next build`.
+`npm test` runs migrations against `prisma/test-integration.db` (see `pretest` in `package.json`) and executes Vitest API tests. Test cleanup deletes in FK order: **activityEntry → comment → cardLabel → label → cards → lists → boards → workspaces**. `npm run build` runs `prisma generate` and `next build`.
 
 ### Run the app locally
 
@@ -81,7 +87,7 @@ npm run db:migrate:dev   # prisma migrate dev — when changing the schema
 npm run db:smoke         # migrate + insert sample board/list/card (PIN-002 smoke)
 ```
 
-Schema: **Workspace** → **Board** → **List** → **Card**, with **`position`** on lists and cards for ordering. Boards have **`description`** and **`visibility`**; cards have **`archived`** and optional **`dueDate`**. Boards own **`Label`** rows; cards link via **`CardLabel`**. Cards own append-only **`Comment`** rows.
+Schema: **Workspace** → **Board** → **List** → **Card**, with **`position`** on lists and cards for ordering. Boards have **`description`** and **`visibility`**; cards have **`archived`** and optional **`dueDate`**. Boards own **`Label`** rows and append-only **`ActivityEntry`** rows; cards link via **`CardLabel`** and own append-only **`Comment`** rows.
 
 ## REST API (JSON)
 
@@ -101,6 +107,7 @@ Base path: **`/api`**. Errors use **`{ "error": "..." }`** with **4xx** where ap
 | `POST` | `/api/boards/[boardId]/labels` | Body `{ "name", "color"? }` — unique name per board |
 | `PATCH` | `/api/boards/[boardId]/labels/[labelId]` | Body `{ "name"?, "color"? }` |
 | `DELETE` | `/api/boards/[boardId]/labels/[labelId]` | Cascades card assignments |
+| `GET` | `/api/boards/[boardId]/activity` | `{ "activities": [ … ], "nextCursor": string \| null }` — newest first; optional **`limit`** (default 50, max 100) and **`cursor`** for pagination |
 | `POST` | `/api/boards/[boardId]/lists/reorder` | Body `{ "listIds": string[] }` — every list on the board, exactly once |
 | `POST` | `/api/lists/[listId]/cards/reorder` | Body `{ "cardIds": string[] }` — every card in the list, exactly once |
 | `POST` | `/api/lists` | Body `{ "boardId", "title", "position"? }` |
@@ -115,7 +122,18 @@ Base path: **`/api`**. Errors use **`{ "error": "..." }`** with **4xx** where ap
 | `DELETE` | `/api/cards/[cardId]/comments/[commentId]` | Remove comment (must belong to card) |
 | `DELETE` | `/api/cards/[cardId]` | |
 
-Run **`npm test`** for automated API coverage (workspaces, scoped boards, board PATCH, cards archive/due date, labels CRUD/assign, board filters, **card comments**, list and **in-list card** reorder, and sprint-path regression).
+Run **`npm test`** for automated API coverage (workspaces, scoped boards, board PATCH, cards archive/due date, labels CRUD/assign, board filters, card comments, **board activity**, list and **in-list card** reorder, and sprint-path regression).
+
+### Activity event types (sprint-7)
+
+| `type` | When emitted |
+| --- | --- |
+| `card.created` | `POST /api/cards` |
+| `card.updated` | `PATCH /api/cards/[cardId]` (non-move fields) |
+| `card.moved` | `PATCH /api/cards/[cardId]` when `listId` changes |
+| `label.attached` | `PUT /api/cards/[cardId]/labels/[labelId]` (new link only) |
+| `label.detached` | `DELETE /api/cards/[cardId]/labels/[labelId]` |
+| `comment.created` | `POST /api/cards/[cardId]/comments` |
 
 ## Learn more
 

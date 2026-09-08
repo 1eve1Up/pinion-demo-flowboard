@@ -2,6 +2,7 @@ import { NextResponse } from "next/server";
 
 import { jsonError, readJsonBody } from "@/lib/http";
 import { prisma } from "@/lib/prisma";
+import { quoteCardTitle, recordActivity } from "@/lib/record-activity";
 import { toCardDTO } from "@/lib/serialize";
 
 export const dynamic = "force-dynamic";
@@ -25,7 +26,7 @@ export async function PATCH(
 
   const existing = await prisma.card.findUnique({
     where: { id: cardId },
-    include: { list: { select: { boardId: true } } },
+    include: { list: { select: { boardId: true, title: true } } },
   });
   if (!existing) {
     return jsonError("Card not found", 404);
@@ -109,10 +110,41 @@ export async function PATCH(
     return jsonError("No valid fields to update", 400);
   }
 
+  const listIdChanged = data.listId !== undefined && data.listId !== existing.listId;
+  let targetListTitle: string | null = null;
+  if (listIdChanged && data.listId) {
+    const targetList = await prisma.list.findUnique({
+      where: { id: data.listId },
+      select: { title: true },
+    });
+    targetListTitle = targetList?.title ?? null;
+  }
+
   const card = await prisma.card.update({
     where: { id: cardId },
     data,
   });
+
+  const boardId = existing.list.boardId;
+  const cardTitle = card.title;
+  if (listIdChanged) {
+    await recordActivity({
+      boardId,
+      type: "card.moved",
+      summary: targetListTitle
+        ? `Moved card ${quoteCardTitle(cardTitle)} to ${quoteCardTitle(targetListTitle)}`
+        : `Moved card ${quoteCardTitle(cardTitle)}`,
+      cardId: card.id,
+    });
+  } else {
+    await recordActivity({
+      boardId,
+      type: "card.updated",
+      summary: `Updated card ${quoteCardTitle(cardTitle)}`,
+      cardId: card.id,
+    });
+  }
+
   return NextResponse.json(toCardDTO(card), {
     headers: { "Content-Type": "application/json" },
   });

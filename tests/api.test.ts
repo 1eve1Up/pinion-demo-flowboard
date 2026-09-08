@@ -5,6 +5,7 @@ import {
   DELETE as deleteBoard,
   PATCH as patchBoard,
 } from "@/app/api/boards/[boardId]/route";
+import { GET as listActivity } from "@/app/api/boards/[boardId]/activity/route";
 import {
   DELETE as deleteLabel,
   PATCH as patchLabel,
@@ -43,6 +44,7 @@ async function readJson<T>(res: Response): Promise<T> {
 }
 
 beforeEach(async () => {
+  await prisma.activityEntry.deleteMany();
   await prisma.comment.deleteMany();
   await prisma.cardLabel.deleteMany();
   await prisma.label.deleteMany();
@@ -1410,5 +1412,261 @@ describe("Sprint path regression (PIN-008)", () => {
       { params: Promise.resolve({ cardId: card.id }) },
     );
     expect(badAuthor.status).toBe(400);
+  });
+
+  it("activity: card create writes activity entry on board", async () => {
+    const board = await readJson<{ id: string }>(
+      await createBoard(
+        new Request("http://localhost/api/boards", {
+          method: "POST",
+          headers: { "Content-Type": "application/json" },
+          body: JSON.stringify({ title: "Activity board" }),
+        }),
+      ),
+    );
+    const list = await readJson<{ id: string }>(
+      await createList(
+        new Request("http://localhost/api/lists", {
+          method: "POST",
+          headers: { "Content-Type": "application/json" },
+          body: JSON.stringify({ boardId: board.id, title: "Todo" }),
+        }),
+      ),
+    );
+    const card = await readJson<{ id: string }>(
+      await createCardRoot(
+        new Request("http://localhost/api/cards", {
+          method: "POST",
+          headers: { "Content-Type": "application/json" },
+          body: JSON.stringify({ listId: list.id, title: "Track me" }),
+        }),
+      ),
+    );
+
+    const entries = await prisma.activityEntry.findMany({
+      where: { boardId: board.id },
+    });
+    expect(entries).toHaveLength(1);
+    expect(entries[0]?.type).toBe("card.created");
+    expect(entries[0]?.cardId).toBe(card.id);
+    expect(entries[0]?.summary).toContain("Track me");
+  });
+
+  it("activity: GET list newest-first with limit and cursor", async () => {
+    const board = await readJson<{ id: string }>(
+      await createBoard(
+        new Request("http://localhost/api/boards", {
+          method: "POST",
+          headers: { "Content-Type": "application/json" },
+          body: JSON.stringify({ title: "Activity feed" }),
+        }),
+      ),
+    );
+    const list = await readJson<{ id: string }>(
+      await createList(
+        new Request("http://localhost/api/lists", {
+          method: "POST",
+          headers: { "Content-Type": "application/json" },
+          body: JSON.stringify({ boardId: board.id, title: "Todo" }),
+        }),
+      ),
+    );
+    await createCardRoot(
+      new Request("http://localhost/api/cards", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ listId: list.id, title: "First" }),
+      }),
+    );
+    await createCardRoot(
+      new Request("http://localhost/api/cards", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ listId: list.id, title: "Second" }),
+      }),
+    );
+
+    const page1 = await readJson<{
+      activities: { id: string; summary: string }[];
+      nextCursor: string | null;
+    }>(
+      await listActivity(
+        new Request(`http://localhost/api/boards/${board.id}/activity?limit=1`),
+        { params: Promise.resolve({ boardId: board.id }) },
+      ),
+    );
+    expect(page1.activities).toHaveLength(1);
+    expect(page1.activities[0]?.summary).toContain("Second");
+    expect(page1.nextCursor).toBeTruthy();
+
+    const page2 = await readJson<{ activities: { id: string }[] }>(
+      await listActivity(
+        new Request(
+          `http://localhost/api/boards/${board.id}/activity?limit=1&cursor=${page1.nextCursor}`,
+        ),
+        { params: Promise.resolve({ boardId: board.id }) },
+      ),
+    );
+    expect(page2.activities).toHaveLength(1);
+    expect(page2.activities[0]?.id).not.toBe(page1.activities[0]?.id);
+
+    const unknown = await listActivity(new Request("http://localhost"), {
+      params: Promise.resolve({ boardId: "missing-board" }),
+    });
+    expect(unknown.status).toBe(404);
+
+    const badLimit = await listActivity(
+      new Request(`http://localhost/api/boards/${board.id}/activity?limit=0`),
+      { params: Promise.resolve({ boardId: board.id }) },
+    );
+    expect(badLimit.status).toBe(400);
+
+    const boardDetail = await readJson<{ lists: { cards: unknown[] }[] }>(
+      await getBoard(
+        new Request(`http://localhost/api/boards/${board.id}`),
+        { params: Promise.resolve({ boardId: board.id }) },
+      ),
+    );
+    expect(boardDetail).not.toHaveProperty("activities");
+  });
+
+  it("activity: label attach, detach, comment, and card update emit entries", async () => {
+    const board = await readJson<{ id: string }>(
+      await createBoard(
+        new Request("http://localhost/api/boards", {
+          method: "POST",
+          headers: { "Content-Type": "application/json" },
+          body: JSON.stringify({ title: "Emit board" }),
+        }),
+      ),
+    );
+    const list = await readJson<{ id: string }>(
+      await createList(
+        new Request("http://localhost/api/lists", {
+          method: "POST",
+          headers: { "Content-Type": "application/json" },
+          body: JSON.stringify({ boardId: board.id, title: "Todo" }),
+        }),
+      ),
+    );
+    const card = await readJson<{ id: string }>(
+      await createCardRoot(
+        new Request("http://localhost/api/cards", {
+          method: "POST",
+          headers: { "Content-Type": "application/json" },
+          body: JSON.stringify({ listId: list.id, title: "Work item" }),
+        }),
+      ),
+    );
+    const label = await readJson<{ id: string }>(
+      await createLabel(
+        new Request("http://localhost/api/boards/x/labels", {
+          method: "POST",
+          headers: { "Content-Type": "application/json" },
+          body: JSON.stringify({ name: "Blocked", color: "#f00" }),
+        }),
+        { params: Promise.resolve({ boardId: board.id }) },
+      ),
+    );
+
+    await attachCardLabel(new Request("http://localhost"), {
+      params: Promise.resolve({ cardId: card.id, labelId: label.id }),
+    });
+    await createComment(
+      new Request("http://localhost/api/cards/x/comments", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ text: "Needs review", author: "agent" }),
+      }),
+      { params: Promise.resolve({ cardId: card.id }) },
+    );
+    await patchCard(
+      new Request("http://localhost/api/cards/x", {
+        method: "PATCH",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ title: "Work item updated" }),
+      }),
+      { params: Promise.resolve({ cardId: card.id }) },
+    );
+    await detachCardLabel(new Request("http://localhost"), {
+      params: Promise.resolve({ cardId: card.id, labelId: label.id }),
+    });
+
+    const feed = await readJson<{ activities: { type: string; actor: string | null }[] }>(
+      await listActivity(new Request("http://localhost"), {
+        params: Promise.resolve({ boardId: board.id }),
+      }),
+    );
+    const types = feed.activities.map((a) => a.type);
+    expect(types).toContain("card.created");
+    expect(types).toContain("label.attached");
+    expect(types).toContain("comment.created");
+    expect(types).toContain("card.updated");
+    expect(types).toContain("label.detached");
+    expect(
+      feed.activities.find((a) => a.type === "comment.created")?.actor,
+    ).toBe("agent");
+
+    const badCursor = await listActivity(
+      new Request(`http://localhost/api/boards/${board.id}/activity?cursor=missing`),
+      { params: Promise.resolve({ boardId: board.id }) },
+    );
+    expect(badCursor.status).toBe(400);
+  });
+
+  it("activity: card move emits card.moved when listId changes", async () => {
+    const board = await readJson<{ id: string }>(
+      await createBoard(
+        new Request("http://localhost/api/boards", {
+          method: "POST",
+          headers: { "Content-Type": "application/json" },
+          body: JSON.stringify({ title: "Move board" }),
+        }),
+      ),
+    );
+    const todo = await readJson<{ id: string }>(
+      await createList(
+        new Request("http://localhost/api/lists", {
+          method: "POST",
+          headers: { "Content-Type": "application/json" },
+          body: JSON.stringify({ boardId: board.id, title: "Todo" }),
+        }),
+      ),
+    );
+    const done = await readJson<{ id: string }>(
+      await createList(
+        new Request("http://localhost/api/lists", {
+          method: "POST",
+          headers: { "Content-Type": "application/json" },
+          body: JSON.stringify({ boardId: board.id, title: "Done" }),
+        }),
+      ),
+    );
+    const card = await readJson<{ id: string }>(
+      await createCardRoot(
+        new Request("http://localhost/api/cards", {
+          method: "POST",
+          headers: { "Content-Type": "application/json" },
+          body: JSON.stringify({ listId: todo.id, title: "Ship it" }),
+        }),
+      ),
+    );
+
+    await patchCard(
+      new Request("http://localhost/api/cards/x", {
+        method: "PATCH",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ listId: done.id }),
+      }),
+      { params: Promise.resolve({ cardId: card.id }) },
+    );
+
+    const feed = await readJson<{ activities: { type: string; summary: string }[] }>(
+      await listActivity(new Request("http://localhost"), {
+        params: Promise.resolve({ boardId: board.id }),
+      }),
+    );
+    const moved = feed.activities.find((a) => a.type === "card.moved");
+    expect(moved?.summary).toContain("Done");
   });
 });

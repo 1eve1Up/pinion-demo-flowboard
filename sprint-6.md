@@ -135,3 +135,7 @@ _Focus: Why did the first `pinion transition … review` fail during sprint-6 ex
 - **Good patterns to carry forward:** API-first comments before Details UI; **fetch comments on panel open** keeps board GET lean; **`toCommentDTOs`** oldest-first; FK cleanup order **`comment → cardLabel → label → …`**; six-PIN sprint stayed focused vs sprint-5’s ten.
 - **Sprint-5 retro closed:** dual app proof gate is now documented, not just an open action item.
 - Blog post: **[docs/sprint-6-card-comments.md](docs/sprint-6-card-comments.md)**.
+
+### Sprint 6 End Board
+
+![Sprint 6 End Board](readme-images/sprint-6-end-board.png)

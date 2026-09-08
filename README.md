@@ -1,6 +1,6 @@
 # FlowBoard
 
-FlowBoard is a **demo through sprint-5**: kanban **workspaces** (structural), **boards**, **lists**, and **cards** with drag-and-drop (reorder cards inside a column, move cards between lists, reorder columns on the board), backed by **Prisma** + **SQLite** and a **Next.js** (App Router) UI and REST API. Sprint-5 adds **board-scoped labels**, **card↔label assignment**, and **board filters** (`label` / `due` / `keyword` query params plus UI). **Auth, realtime, and Postgres are still out of scope** (see below and **[AGENTS.md](AGENTS.md)** for the client-only DnD boundary).
+FlowBoard is a **demo through sprint-6**: kanban **workspaces** (structural), **boards**, **lists**, and **cards** with drag-and-drop (reorder cards inside a column, move cards between lists, reorder columns on the board), backed by **Prisma** + **SQLite** and a **Next.js** (App Router) UI and REST API. Sprint-5 adds **board-scoped labels**, **card↔label assignment**, and **board filters** (`label` / `due` / `keyword` query params plus UI). Sprint-6 adds **append-only card comments** (optional `author` string, no login). **Auth, realtime, and Postgres are still out of scope** (see below and **[AGENTS.md](AGENTS.md)** for the client-only DnD boundary).
 
 ## Repository layout
 
@@ -26,13 +26,18 @@ This release is still **single-user** and **local-first**. **Workspaces are stru
 - **Board GET filters** — **`GET /api/boards/[boardId]`** accepts **`label`** (id or case-insensitive name), **`due`** (`overdue` | `today` | `soon` | `none`), **`keyword`** (substring on title/description), composed with **`includeArchived`**. Keyword is simple string match only (no search engine).
 - **UI** — Label chips on cards; board **Labels** manager; card **Details** assign toggles; **Filter** controls sync to the board URL query string.
 
+**Shipped in sprint-6 (comments):**
+
+- **Comments** — Append-only `Comment` rows on cards (`text`, optional `author`, no `User`). REST: **`GET`/`POST` `/api/cards/[cardId]/comments`**, **`DELETE` `/api/cards/[cardId]/comments/[commentId]`** (demo cleanup). **`GET /api/boards/[boardId]`** does **not** nest comment threads on cards by default.
+- **UI** — Card **Details** loads comments on open; list (oldest first) + compose form (text + optional author).
+
 **Still not shipped (do not assume from this README):**
 
 - **No authentication** — no OAuth, email/password, sessions, or per-user isolation. Anyone who can reach the app uses the same SQLite database.
 - **No invites, roles, or workspace permissions** — the visibility field is stored for API/PRD alignment; it is **not** enforced for multiple users.
 - **No realtime collaboration** — no websockets, presence, or coordinated concurrent edits.
 
-**Deferred beyond sprint-5:** production auth, team/workspace membership, realtime updates, PostgreSQL as the default demo database, comments/attachments/notifications/assignees at PRD scale, and other PRD items not listed above.
+**Deferred beyond sprint-6:** production auth, team/workspace membership, realtime updates, PostgreSQL as the default demo database, board activity/audit log, attachments/notifications/assignees at PRD scale, comment mentions/editing/threading, and other PRD items not listed above.
 
 ## Quick start (new contributors)
 
@@ -49,7 +54,7 @@ npm test
 npm run build
 ```
 
-`npm test` runs migrations against `prisma/test-integration.db` (see `pretest` in `package.json`) and executes Vitest API tests. Test cleanup deletes in FK order: **cardLabel → label → cards → lists → boards → workspaces**. `npm run build` runs `prisma generate` and `next build`.
+`npm test` runs migrations against `prisma/test-integration.db` (see `pretest` in `package.json`) and executes Vitest API tests. Test cleanup deletes in FK order: **comment → cardLabel → label → cards → lists → boards → workspaces**. `npm run build` runs `prisma generate` and `next build`.
 
 ### Run the app locally
 
@@ -76,7 +81,7 @@ npm run db:migrate:dev   # prisma migrate dev — when changing the schema
 npm run db:smoke         # migrate + insert sample board/list/card (PIN-002 smoke)
 ```
 
-Schema: **Workspace** → **Board** → **List** → **Card**, with **`position`** on lists and cards for ordering. Boards have **`description`** and **`visibility`**; cards have **`archived`** and optional **`dueDate`**. Boards also own **`Label`** rows; cards link via **`CardLabel`**.
+Schema: **Workspace** → **Board** → **List** → **Card**, with **`position`** on lists and cards for ordering. Boards have **`description`** and **`visibility`**; cards have **`archived`** and optional **`dueDate`**. Boards own **`Label`** rows; cards link via **`CardLabel`**. Cards own append-only **`Comment`** rows.
 
 ## REST API (JSON)
 
@@ -105,9 +110,12 @@ Base path: **`/api`**. Errors use **`{ "error": "..." }`** with **4xx** where ap
 | `PATCH` | `/api/cards/[cardId]` | Body `{ "title"?, "description"?, "listId"?, "position"?, "archived"?, "dueDate"? }` — `dueDate` ISO string or **`null`** to clear; `listId` only within the **same board** |
 | `PUT` | `/api/cards/[cardId]/labels/[labelId]` | Attach label (idempotent); label must belong to the card's board |
 | `DELETE` | `/api/cards/[cardId]/labels/[labelId]` | Detach label |
+| `GET` | `/api/cards/[cardId]/comments` | `{ "comments": [ { id, cardId, text, author, createdAt } ] }` — oldest first |
+| `POST` | `/api/cards/[cardId]/comments` | Body `{ "text", "author"? }` — non-empty text required |
+| `DELETE` | `/api/cards/[cardId]/comments/[commentId]` | Remove comment (must belong to card) |
 | `DELETE` | `/api/cards/[cardId]` | |
 
-Run **`npm test`** for automated API coverage (workspaces, scoped boards, board PATCH, cards archive/due date, labels CRUD/assign, board filters, list and **in-list card** reorder, and sprint-path regression).
+Run **`npm test`** for automated API coverage (workspaces, scoped boards, board PATCH, cards archive/due date, labels CRUD/assign, board filters, **card comments**, list and **in-list card** reorder, and sprint-path regression).
 
 ## Learn more
 
@@ -122,7 +130,7 @@ Deploy like any Next.js app (e.g. [Vercel](https://vercel.com/)); set **`DATABAS
 
 This demo repo is being built by [Level Up](https://levelupla.io)'s Pinion.
 
-- Demo sprints: Five (and counting)
+- Demo sprints: Six (and counting)
 - Human code contributions to date: Zero
 
 ### About Pinion

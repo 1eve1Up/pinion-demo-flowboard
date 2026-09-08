@@ -2,6 +2,7 @@ import type {
   Board,
   BoardVisibility,
   Card,
+  Comment,
   Label,
   List,
   Workspace,
@@ -24,6 +25,14 @@ export type LabelDTO = {
   boardId: string;
   name: string;
   color: string | null;
+  createdAt: string;
+};
+
+export type CommentDTO = {
+  id: string;
+  cardId: string;
+  text: string;
+  author: string | null;
   createdAt: string;
 };
 
@@ -93,6 +102,23 @@ export function toLabelDTO(l: LabelRow): LabelDTO {
     color: l.color ?? null,
     createdAt: l.createdAt.toISOString(),
   };
+}
+
+export function toCommentDTO(c: Comment): CommentDTO {
+  return {
+    id: c.id,
+    cardId: c.cardId,
+    text: c.text,
+    author: c.author ?? null,
+    createdAt: c.createdAt.toISOString(),
+  };
+}
+
+export function toCommentDTOs(comments: Comment[]): CommentDTO[] {
+  return comments
+    .slice()
+    .sort((a, b) => a.createdAt.getTime() - b.createdAt.getTime())
+    .map(toCommentDTO);
 }
 
 function labelsFromCard(c: CardWithLabels): LabelDTO[] {

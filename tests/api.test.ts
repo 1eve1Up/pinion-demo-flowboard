@@ -19,6 +19,13 @@ import {
   DELETE as detachCardLabel,
   PUT as attachCardLabel,
 } from "@/app/api/cards/[cardId]/labels/[labelId]/route";
+import {
+  DELETE as deleteComment,
+} from "@/app/api/cards/[cardId]/comments/[commentId]/route";
+import {
+  GET as listComments,
+  POST as createComment,
+} from "@/app/api/cards/[cardId]/comments/route";
 import { PATCH as patchCard } from "@/app/api/cards/[cardId]/route";
 import { POST as createCardRoot } from "@/app/api/cards/route";
 import { PATCH as patchList, DELETE as deleteList } from "@/app/api/lists/[listId]/route";
@@ -36,6 +43,7 @@ async function readJson<T>(res: Response): Promise<T> {
 }
 
 beforeEach(async () => {
+  await prisma.comment.deleteMany();
   await prisma.cardLabel.deleteMany();
   await prisma.label.deleteMany();
   await prisma.card.deleteMany();
@@ -1231,5 +1239,176 @@ describe("Sprint path regression (PIN-008)", () => {
       ),
     );
     expect(todayOnly.lists[0].cards.map((c) => c.id)).toEqual([todayCard.id]);
+  });
+
+  it("comments: list, create, empty text rejected, 404, delete", async () => {
+    const board = await readJson<{ id: string }>(
+      await createBoard(
+        new Request("http://localhost/api/boards", {
+          method: "POST",
+          headers: { "Content-Type": "application/json" },
+          body: JSON.stringify({ title: "Comments board" }),
+        }),
+      ),
+    );
+    const list = await readJson<{ id: string }>(
+      await createList(
+        new Request("http://localhost/api/lists", {
+          method: "POST",
+          headers: { "Content-Type": "application/json" },
+          body: JSON.stringify({ boardId: board.id, title: "Todo" }),
+        }),
+      ),
+    );
+    const card = await readJson<{ id: string }>(
+      await createCardRoot(
+        new Request("http://localhost/api/cards", {
+          method: "POST",
+          headers: { "Content-Type": "application/json" },
+          body: JSON.stringify({ listId: list.id, title: "Task" }),
+        }),
+      ),
+    );
+
+    const emptyList = await readJson<{ comments: unknown[] }>(
+      await listComments(new Request("http://localhost"), {
+        params: Promise.resolve({ cardId: card.id }),
+      }),
+    );
+    expect(emptyList.comments).toEqual([]);
+
+    const badPost = await createComment(
+      new Request("http://localhost/api/cards/x/comments", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ text: "   " }),
+      }),
+      { params: Promise.resolve({ cardId: card.id }) },
+    );
+    expect(badPost.status).toBe(400);
+
+    const first = await readJson<{ id: string; text: string; author: string | null }>(
+      await createComment(
+        new Request("http://localhost/api/cards/x/comments", {
+          method: "POST",
+          headers: { "Content-Type": "application/json" },
+          body: JSON.stringify({ text: "First note", author: "agent" }),
+        }),
+        { params: Promise.resolve({ cardId: card.id }) },
+      ),
+    );
+    expect(first.text).toBe("First note");
+    expect(first.author).toBe("agent");
+
+    await new Promise((r) => setTimeout(r, 5));
+
+    const second = await readJson<{ id: string; text: string }>(
+      await createComment(
+        new Request("http://localhost/api/cards/x/comments", {
+          method: "POST",
+          headers: { "Content-Type": "application/json" },
+          body: JSON.stringify({ text: "Second note" }),
+        }),
+        { params: Promise.resolve({ cardId: card.id }) },
+      ),
+    );
+
+    const listed = await readJson<{ comments: { id: string; text: string }[] }>(
+      await listComments(new Request("http://localhost"), {
+        params: Promise.resolve({ cardId: card.id }),
+      }),
+    );
+    expect(listed.comments.map((c) => c.text)).toEqual(["First note", "Second note"]);
+
+    const unknownCard = await listComments(new Request("http://localhost"), {
+      params: Promise.resolve({ cardId: "missing-card" }),
+    });
+    expect(unknownCard.status).toBe(404);
+
+    const del = await deleteComment(new Request("http://localhost"), {
+      params: Promise.resolve({ cardId: card.id, commentId: first.id }),
+    });
+    expect(del.status).toBe(204);
+
+    const afterDelete = await readJson<{ comments: { id: string }[] }>(
+      await listComments(new Request("http://localhost"), {
+        params: Promise.resolve({ cardId: card.id }),
+      }),
+    );
+    expect(afterDelete.comments.map((c) => c.id)).toEqual([second.id]);
+  });
+
+  it("comments: board GET omits nested comments; delete 404 for wrong card", async () => {
+    const board = await readJson<{ id: string }>(
+      await createBoard(
+        new Request("http://localhost/api/boards", {
+          method: "POST",
+          headers: { "Content-Type": "application/json" },
+          body: JSON.stringify({ title: "No nested comments" }),
+        }),
+      ),
+    );
+    const list = await readJson<{ id: string }>(
+      await createList(
+        new Request("http://localhost/api/lists", {
+          method: "POST",
+          headers: { "Content-Type": "application/json" },
+          body: JSON.stringify({ boardId: board.id, title: "Todo" }),
+        }),
+      ),
+    );
+    const card = await readJson<{ id: string }>(
+      await createCardRoot(
+        new Request("http://localhost/api/cards", {
+          method: "POST",
+          headers: { "Content-Type": "application/json" },
+          body: JSON.stringify({ listId: list.id, title: "Task" }),
+        }),
+      ),
+    );
+    await createComment(
+      new Request("http://localhost/api/cards/x/comments", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ text: "Hidden from board GET" }),
+      }),
+      { params: Promise.resolve({ cardId: card.id }) },
+    );
+
+    const boardDetail = await readJson<{
+      lists: { cards: Record<string, unknown>[] }[];
+    }>(
+      await getBoard(new Request("http://localhost"), {
+        params: Promise.resolve({ boardId: board.id }),
+      }),
+    );
+    const nested = boardDetail.lists[0].cards[0];
+    expect(nested).not.toHaveProperty("comments");
+
+    const comment = await readJson<{ id: string }>(
+      await createComment(
+        new Request("http://localhost/api/cards/x/comments", {
+          method: "POST",
+          headers: { "Content-Type": "application/json" },
+          body: JSON.stringify({ text: "To delete" }),
+        }),
+        { params: Promise.resolve({ cardId: card.id }) },
+      ),
+    );
+
+    const wrongCard = await deleteComment(new Request("http://localhost"), {
+      params: Promise.resolve({ cardId: "other-card", commentId: comment.id }),
+    });
+    expect(wrongCard.status).toBe(404);
+
+    const badAuthor = await createComment(
+      new Request("http://localhost/api/cards/x/comments", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ text: "Hi", author: 42 }),
+      }),
+      { params: Promise.resolve({ cardId: card.id }) },
+    );
+    expect(badAuthor.status).toBe(400);
   });
 });

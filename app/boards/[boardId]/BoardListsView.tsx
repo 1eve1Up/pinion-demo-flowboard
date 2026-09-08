@@ -24,7 +24,7 @@ import { useCallback, useEffect, useRef, useState } from "react";
 
 import { cardDueMeta, type CardDueTone } from "@/lib/card-due-meta";
 import { readApiErrorMessage } from "@/lib/read-api-error";
-import type { BoardDetailDTO, CardDTO, LabelDTO, ListDTO } from "@/lib/serialize";
+import type { BoardDetailDTO, CardDTO, CommentDTO, LabelDTO, ListDTO } from "@/lib/serialize";
 
 function droppableIdForList(listId: string) {
   return `droppable-list-${listId}`;
@@ -80,6 +80,15 @@ function labelChipStyle(color: string | null): CSSProperties | undefined {
   };
 }
 
+function formatCommentTime(iso: string): string {
+  const d = new Date(iso);
+  if (Number.isNaN(d.getTime())) return iso;
+  return d.toLocaleString(undefined, {
+    dateStyle: "short",
+    timeStyle: "short",
+  });
+}
+
 function CardDetailPanel({
   card,
   boardLabels,
@@ -106,6 +115,12 @@ function CardDetailPanel({
   );
   const [saving, setSaving] = useState(false);
   const [error, setError] = useState<string | null>(null);
+  const [comments, setComments] = useState<CommentDTO[]>([]);
+  const [commentsLoading, setCommentsLoading] = useState(true);
+  const [commentText, setCommentText] = useState("");
+  const [commentAuthor, setCommentAuthor] = useState("");
+  const [commentPosting, setCommentPosting] = useState(false);
+  const [commentsError, setCommentsError] = useState<string | null>(null);
 
   useEffect(() => {
     setDescription(card.description);
@@ -113,6 +128,46 @@ function CardDetailPanel({
     setArchived(card.archived);
     setAssignedIds(new Set(card.labels.map((l) => l.id)));
   }, [card.id, card.description, card.dueDate, card.archived, card.labels]);
+
+  useEffect(() => {
+    let cancelled = false;
+    setCommentsLoading(true);
+    setCommentsError(null);
+    void (async () => {
+      try {
+        const res = await fetch(`/api/cards/${card.id}/comments`);
+        if (!res.ok) {
+          if (!cancelled) {
+            setCommentsError(
+              await readApiErrorMessage(res, `Comments failed (${res.status})`),
+            );
+            setComments([]);
+          }
+          return;
+        }
+        const body = (await res.json()) as { comments?: CommentDTO[] };
+        if (!cancelled) {
+          setComments(body.comments ?? []);
+        }
+      } catch {
+        if (!cancelled) {
+          setCommentsError("Could not load comments.");
+          setComments([]);
+        }
+      } finally {
+        if (!cancelled) setCommentsLoading(false);
+      }
+    })();
+    return () => {
+      cancelled = true;
+    };
+  }, [card.id]);
+
+  useEffect(() => {
+    setCommentText("");
+    setCommentAuthor("");
+    setCommentsError(null);
+  }, [card.id]);
 
   useEffect(() => {
     descriptionRef.current?.focus();
@@ -180,6 +235,38 @@ function CardDetailPanel({
       onClose();
     } finally {
       setSaving(false);
+    }
+  }
+
+  async function postComment(e: FormEvent) {
+    e.preventDefault();
+    const text = commentText.trim();
+    if (!text) {
+      setCommentsError("Comment text is required.");
+      return;
+    }
+    setCommentsError(null);
+    setCommentPosting(true);
+    try {
+      const res = await fetch(`/api/cards/${card.id}/comments`, {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({
+          text,
+          author: commentAuthor.trim() || undefined,
+        }),
+      });
+      if (!res.ok) {
+        setCommentsError(
+          await readApiErrorMessage(res, `Comment failed (${res.status})`),
+        );
+        return;
+      }
+      const created = (await res.json()) as CommentDTO;
+      setComments((prev) => [...prev, created]);
+      setCommentText("");
+    } finally {
+      setCommentPosting(false);
     }
   }
 
@@ -268,6 +355,81 @@ function CardDetailPanel({
           })
         )}
       </fieldset>
+      <div className="space-y-1">
+        <p className="text-[10px] font-medium uppercase text-zinc-500 dark:text-zinc-400">
+          Comments
+        </p>
+        {commentsLoading ? (
+          <p className="text-[11px] text-zinc-500">Loading comments…</p>
+        ) : comments.length === 0 ? (
+          <p className="text-[11px] text-zinc-500">No comments yet.</p>
+        ) : (
+          <ul className="max-h-32 space-y-1.5 overflow-y-auto text-xs">
+            {comments.map((c) => (
+              <li
+                key={c.id}
+                className="rounded border border-zinc-200 bg-white px-2 py-1 dark:border-zinc-600 dark:bg-zinc-950"
+              >
+                <div className="flex flex-wrap items-baseline justify-between gap-x-2 gap-y-0.5">
+                  <span className="font-medium text-zinc-800 dark:text-zinc-100">
+                    {c.author ?? "Anonymous"}
+                  </span>
+                  <time
+                    className="text-[10px] tabular-nums text-zinc-500 dark:text-zinc-400"
+                    dateTime={c.createdAt}
+                  >
+                    {formatCommentTime(c.createdAt)}
+                  </time>
+                </div>
+                <p className="mt-0.5 whitespace-pre-wrap text-zinc-700 dark:text-zinc-300">
+                  {c.text}
+                </p>
+              </li>
+            ))}
+          </ul>
+        )}
+        <form onSubmit={(e) => void postComment(e)} className="space-y-1 pt-1">
+          <label className="sr-only" htmlFor={`card-${card.id}-comment-text`}>
+            Comment
+          </label>
+          <textarea
+            id={`card-${card.id}-comment-text`}
+            value={commentText}
+            onChange={(e) => setCommentText(e.target.value)}
+            rows={2}
+            disabled={commentPosting}
+            placeholder="Add a comment…"
+            className="w-full resize-y rounded border border-zinc-300 bg-white px-1.5 py-1 text-xs outline-none ring-zinc-400 focus-visible:ring-2 dark:border-zinc-600 dark:bg-zinc-950"
+          />
+          <label
+            className="text-[10px] font-medium uppercase text-zinc-500 dark:text-zinc-400"
+            htmlFor={`card-${card.id}-comment-author`}
+          >
+            Author (optional)
+          </label>
+          <input
+            id={`card-${card.id}-comment-author`}
+            type="text"
+            value={commentAuthor}
+            onChange={(e) => setCommentAuthor(e.target.value)}
+            disabled={commentPosting}
+            placeholder="agent"
+            className="w-full rounded border border-zinc-300 bg-white px-1.5 py-1 text-xs outline-none ring-zinc-400 focus-visible:ring-2 dark:border-zinc-600 dark:bg-zinc-950"
+          />
+          <button
+            type="submit"
+            disabled={commentPosting || !commentText.trim()}
+            className="rounded border border-zinc-300 px-2 py-1 text-xs outline-none ring-offset-2 focus-visible:ring-2 focus-visible:ring-zinc-400 disabled:opacity-50 dark:border-zinc-600 dark:focus-visible:ring-zinc-500"
+          >
+            {commentPosting ? "Posting…" : "Post comment"}
+          </button>
+        </form>
+        {commentsError ? (
+          <p className="text-xs text-red-600 dark:text-red-400" role="alert">
+            {commentsError}
+          </p>
+        ) : null}
+      </div>
       <div className="flex items-center gap-2 text-xs text-zinc-700 dark:text-zinc-300">
         <input
           id={archivedId}
@@ -1011,56 +1173,56 @@ export function BoardListsView({
           panel, then add cards inside that column.
         </p>
       ) : null}
-      <div
-        className={`flex gap-4 overflow-x-auto pb-2 ${lists.length === 0 ? "" : "mt-8"}`}
+      <DndContext
+        sensors={cardSensors}
+        collisionDetection={closestCorners}
+        onDragStart={() => setDndError(null)}
+        onDragEnd={(e) => void onCardDragEnd(e)}
       >
-        {lists.map((list) => (
-          <ColumnDropShell key={list.id} listId={list.id}>
-            <ColumnDragHandle listId={list.id} title={list.title} />
-            <DndContext
-              sensors={cardSensors}
-              collisionDetection={closestCorners}
-              onDragStart={() => setDndError(null)}
-              onDragEnd={(e) => void onCardDragEnd(e)}
-            >
+        <div
+          className={`flex gap-4 overflow-x-auto pb-2 ${lists.length === 0 ? "" : "mt-8"}`}
+        >
+          {lists.map((list) => (
+            <ColumnDropShell key={list.id} listId={list.id}>
+              <ColumnDragHandle listId={list.id} title={list.title} />
               <ListColumnBody
                 list={list}
                 boardLabels={board.labels}
                 includeArchived={includeArchived}
               />
-            </DndContext>
-          </ColumnDropShell>
-        ))}
+            </ColumnDropShell>
+          ))}
 
-        <div className="w-72 shrink-0 rounded-lg border border-dashed border-zinc-300 bg-white p-3 dark:border-zinc-600 dark:bg-zinc-950">
-          <h2 className="text-sm font-medium text-zinc-700 dark:text-zinc-300">
-            Add list
-          </h2>
-          <form className="mt-3 flex flex-col gap-2" onSubmit={onSubmitList}>
-            {error ? (
-              <p className="text-xs text-red-600 dark:text-red-400" role="alert">
-                {error}
-              </p>
-            ) : null}
-            <input
-              type="text"
-              value={title}
-              onChange={(e) => setTitle(e.target.value)}
-              placeholder="Column name"
-              autoComplete="off"
-              disabled={pending}
-              className="rounded-md border border-zinc-300 bg-white px-2 py-1.5 text-sm dark:border-zinc-600 dark:bg-zinc-900"
-            />
-            <button
-              type="submit"
-              disabled={pending}
-              className="rounded-md bg-zinc-900 py-1.5 text-sm font-medium text-white disabled:opacity-50 dark:bg-zinc-100 dark:text-zinc-900"
-            >
-              {pending ? "Adding…" : "Add list"}
-            </button>
-          </form>
+          <div className="w-72 shrink-0 rounded-lg border border-dashed border-zinc-300 bg-white p-3 dark:border-zinc-600 dark:bg-zinc-950">
+            <h2 className="text-sm font-medium text-zinc-700 dark:text-zinc-300">
+              Add list
+            </h2>
+            <form className="mt-3 flex flex-col gap-2" onSubmit={onSubmitList}>
+              {error ? (
+                <p className="text-xs text-red-600 dark:text-red-400" role="alert">
+                  {error}
+                </p>
+              ) : null}
+              <input
+                type="text"
+                value={title}
+                onChange={(e) => setTitle(e.target.value)}
+                placeholder="Column name"
+                autoComplete="off"
+                disabled={pending}
+                className="rounded-md border border-zinc-300 bg-white px-2 py-1.5 text-sm dark:border-zinc-600 dark:bg-zinc-900"
+              />
+              <button
+                type="submit"
+                disabled={pending}
+                className="rounded-md bg-zinc-900 py-1.5 text-sm font-medium text-white disabled:opacity-50 dark:bg-zinc-100 dark:text-zinc-900"
+              >
+                {pending ? "Adding…" : "Add list"}
+              </button>
+            </form>
+          </div>
         </div>
-      </div>
+      </DndContext>
     </DndContext>
   );
 }

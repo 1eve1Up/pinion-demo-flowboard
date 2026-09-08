@@ -59,8 +59,21 @@ model Card {
   dueDate     DateTime?
   createdAt   DateTime  @default(now())
   labels      CardLabel[]
+  comments    Comment[]
 
   @@index([listId])
+}
+
+/** Append-only card comment (no auth / no User). */
+model Comment {
+  id        String   @id @default(cuid())
+  cardId    String
+  card      Card     @relation(fields: [cardId], references: [id], onDelete: Cascade)
+  text      String
+  author    String?
+  createdAt DateTime @default(now())
+
+  @@index([cardId])
 }
 
 /** Board-scoped categorization tag (no auth / no User). */

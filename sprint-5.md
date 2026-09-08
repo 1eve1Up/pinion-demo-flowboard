@@ -140,3 +140,7 @@ _Focus: Why did a FlowBoard type error (`cardDueMeta` arity / `readApiErrorMessa
 
 - **Good patterns to carry forward:** API-first labels before UI; **`lib/board-filters.ts`** + Vitest; filter/query params shareable for agents; keep filter chrome outside `@dnd-kit` internals; FK cleanup order includes **`cardLabel` → `label`**.
 - Blog post: **[docs/sprint-5-labels-and-filters.md](docs/sprint-5-labels-and-filters.md)**.
+
+### Sprint 5 End Board
+
+![Sprint 5 End Board](readme-images/sprint-5-end-board.png)

@@ -159,3 +159,6 @@ _Focus: Why is activity recording fire-and-forget in route handlers instead of a
 - **Good patterns to carry forward:** dedicated activity GET keeps board GET lean; **fetch on panel expand** mirrors comments-in-Details; **`recordActivity`** try/catch; **`toActivityEntryDTOs`** newest-first; FK cleanup **`activityEntry → comment → …`**; seven-PIN sprint matched sprint-6 sizing.
 - Blog post: **[docs/sprint-7-board-activity-log.md](docs/sprint-7-board-activity-log.md)**.
 
+### Sprint 7 End Board
+
+![Sprint 7 End Board](readme-images/sprint-7-end-board.png)

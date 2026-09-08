@@ -148,7 +148,7 @@ Deploy like any Next.js app (e.g. [Vercel](https://vercel.com/)); set **`DATABAS
 
 This demo repo is being built by [Level Up](https://levelupla.io)'s Pinion.
 
-- Demo sprints: Six (and counting)
+- Demo sprints: Seven (and counting)
 - Human code contributions to date: Zero
 
 ### About Pinion
